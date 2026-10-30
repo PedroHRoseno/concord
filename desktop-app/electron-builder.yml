@@ -2,6 +2,7 @@
 # A URL do sinalizador do instalador entra em VITE_SIGNALING_URL na hora do build.
 appId: com.concord.app
 productName: Concord
+electronVersion: 45.1.0
 directories:
   output: release
 files:
