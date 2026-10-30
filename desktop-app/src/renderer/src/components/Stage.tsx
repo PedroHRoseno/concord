@@ -20,6 +20,7 @@ interface StageProps {
   audioRoute: DesktopAudioRoute
   onWatch: (id: string) => void
   onUnwatch: (id: string) => void
+  onLayoutChange: (layout: 'grid' | 'focus') => void
 }
 
 export interface StageHandle {
@@ -38,7 +39,7 @@ const RESIZE: HandleStyles = {
 }
 
 export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
-  { entries, layout, isolateAudio, audioRoute, onWatch, onUnwatch },
+  { entries, layout, isolateAudio, audioRoute, onWatch, onUnwatch, onLayoutChange },
   ref
 ) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -227,8 +228,14 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
         onMuted={(muted) => updateMix(entry.id, { muted })}
         onWatch={() => onWatch(entry.id)}
         onUnwatch={() => onUnwatch(entry.id)}
-        onFocus={() => setFocusedId(entry.id)}
-        onExitFocus={() => setFocusedId(null)}
+        onFocus={() => {
+          setFocusedId(entry.id)
+          onLayoutChange('focus')
+        }}
+        onExitFocus={() => {
+          setFocusedId(null)
+          onLayoutChange('grid')
+        }}
       />
     )
   }
@@ -258,6 +265,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
               className="absolute z-20 w-80 cursor-grab active:cursor-grabbing"
               style={{ right: float.x, bottom: float.y }}
               onPointerDown={(event) => {
+                if (event.target instanceof Element && event.target.closest('[data-hud]')) return
                 event.currentTarget.setPointerCapture(event.pointerId)
                 setDrag({ dx: event.clientX, dy: event.clientY })
               }}

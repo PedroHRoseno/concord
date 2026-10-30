@@ -39,6 +39,23 @@ interface VideoStageProps {
   onToggleWatch: (() => void) | null
 }
 
+interface WebkitVideo extends HTMLVideoElement {
+  webkitSupportsFullscreen?: boolean
+  webkitEnterFullscreen?: () => void
+  webkitExitFullscreen?: () => void
+  webkitDisplayingFullscreen?: boolean
+  webkitSetPresentationMode?: (mode: 'inline' | 'picture-in-picture') => void
+  webkitPresentationMode?: string
+}
+
+function tileOf(node: HTMLElement): HTMLElement {
+  return (node.closest('.stage-tile') as HTMLElement | null) ?? node
+}
+
+function inHud(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest('[data-hud]'))
+}
+
 function factLines(details: StreamDetails | null): Array<{ label: string; value: string }> {
   if (!details) return []
   return [
@@ -79,7 +96,11 @@ export function VideoStage({
   const [stats, setStats] = useState<StreamStats | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [pip, setPip] = useState(false)
+  const [infoPinned, setInfoPinned] = useState(false)
+  const cssCleanup = useRef<(() => void) | null>(null)
+  const nativeFullscreen = useRef(false)
   const facts = factLines(details)
+  const infoVisible = infoOpen || infoPinned
 
   useEffect(() => {
     const video = videoRef.current
@@ -115,10 +136,48 @@ export function VideoStage({
   }, [])
 
   useEffect(() => {
-    const onChange = () => setFullscreen(document.fullscreenElement === containerRef.current)
+    const onChange = () => {
+      const node = containerRef.current
+      if (!node) return
+      const tile = tileOf(node)
+      const native = document.fullscreenElement === tile || document.fullscreenElement === node
+      if (native) {
+        nativeFullscreen.current = true
+        setFullscreen(true)
+        return
+      }
+      if (!nativeFullscreen.current) return
+      nativeFullscreen.current = false
+      cssCleanup.current?.()
+      setFullscreen(false)
+      void window.electronAPI?.setWindowFullscreen?.(false)
+    }
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    const onEnd = () => setFullscreen(false)
+    video.addEventListener('webkitendfullscreen', onEnd)
+    return () => video.removeEventListener('webkitendfullscreen', onEnd)
+  }, [media])
+
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      const node = containerRef.current
+      if (!node) return
+      void leaveFullscreen(videoRef.current as WebkitVideo | null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
+  useEffect(() => () => cssCleanup.current?.(), [])
 
   useEffect(() => {
     const video = videoRef.current
@@ -161,18 +220,110 @@ export function VideoStage({
     }
   }, [showStats, pc, direction, peerId])
 
+  function releaseTile(): void {
+    cssCleanup.current?.()
+  }
+
+  function holdTile(tile: HTMLElement, className: 'is-stage-fullscreen' | 'is-stage-pip'): void {
+    releaseTile()
+    const saved: Array<{ node: HTMLElement; overflow: string }> = []
+    let parent = tile.parentElement
+    while (parent) {
+      saved.push({ node: parent, overflow: parent.style.overflow })
+      parent.style.overflow = 'visible'
+      parent = parent.parentElement
+    }
+    if (className === 'is-stage-fullscreen') document.body.style.overflow = 'hidden'
+    tile.dataset.present = className === 'is-stage-fullscreen' ? 'fullscreen' : 'pip'
+    document.body.classList.toggle('live-fullscreen', className === 'is-stage-fullscreen')
+    cssCleanup.current = () => {
+      delete tile.dataset.present
+      document.body.classList.remove('live-fullscreen')
+      for (const item of saved) item.node.style.overflow = item.overflow
+      cssCleanup.current = null
+    }
+  }
+
+  async function leaveFullscreen(video: WebkitVideo | null): Promise<void> {
+    nativeFullscreen.current = false
+    releaseTile()
+    setFullscreen(false)
+    if (video?.webkitDisplayingFullscreen) video.webkitExitFullscreen?.()
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen()
+      } catch {
+        /* a página já saiu da tela cheia */
+      }
+    }
+    await window.electronAPI?.setWindowFullscreen?.(false)
+  }
+
   async function toggleFullscreen(): Promise<void> {
     const node = containerRef.current
-    if (!node) return
-    if (document.fullscreenElement === node) await document.exitFullscreen()
-    else await node.requestFullscreen()
+    const video = videoRef.current as WebkitVideo | null
+    if (!node || !video) return
+    const tile = tileOf(node)
+    const active =
+      fullscreen ||
+      tile.dataset.present === 'fullscreen' ||
+      document.fullscreenElement === tile ||
+      document.fullscreenElement === node ||
+      Boolean(video.webkitDisplayingFullscreen)
+    if (active) {
+      await leaveFullscreen(video)
+      return
+    }
+    if (video.webkitSupportsFullscreen && video.webkitEnterFullscreen && document.fullscreenEnabled === false) {
+      video.webkitEnterFullscreen()
+      setFullscreen(true)
+      return
+    }
+    holdTile(tile, 'is-stage-fullscreen')
+    setFullscreen(true)
+    try {
+      if (document.fullscreenEnabled && document.fullscreenElement !== tile) await tile.requestFullscreen()
+    } catch (error) {
+      console.warn('Fullscreen da página recusado.', error)
+    }
+    await window.electronAPI?.setWindowFullscreen?.(true)
   }
 
   async function togglePip(): Promise<void> {
-    const video = videoRef.current
-    if (!video || !document.pictureInPictureEnabled) return
-    if (document.pictureInPictureElement === video) await document.exitPictureInPicture()
-    else await video.requestPictureInPicture()
+    const video = videoRef.current as WebkitVideo | null
+    const node = containerRef.current
+    if (!video || !node) return
+    const tile = tileOf(node)
+    if (document.pictureInPictureElement === video) {
+      try {
+        await document.exitPictureInPicture()
+      } catch (error) {
+        console.warn('Não foi possível sair do picture-in-picture.', error)
+      }
+      return
+    }
+    if (tile.dataset.present === 'pip') {
+      releaseTile()
+      setPip(false)
+      return
+    }
+    try {
+      if (document.pictureInPictureEnabled) {
+        if (video.paused) await video.play()
+        await video.requestPictureInPicture()
+        return
+      }
+      if (video.webkitSetPresentationMode) {
+        const next = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture'
+        video.webkitSetPresentationMode(next)
+        setPip(next === 'picture-in-picture')
+        return
+      }
+    } catch (error) {
+      console.warn('Picture-in-picture recusado.', error)
+    }
+    holdTile(tile, 'is-stage-pip')
+    setPip(true)
   }
 
   function resetZoom(): void {
@@ -191,7 +342,7 @@ export function VideoStage({
         resetZoom()
       }}
       onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest('[data-hud]')) return
+        if (inHud(event.target)) return
         if (canvas && scaleRef.current <= 1) return
         dragRef.current = {
           x: event.clientX - panRef.current.x,
@@ -226,12 +377,14 @@ export function VideoStage({
       {showStats ? <StatsOverlay stats={stats} pending={!stats} facts={facts} /> : null}
       <div
         data-hud
-        className={`stage-no-drag absolute inset-x-3 bottom-3 z-20 flex w-fit max-w-[calc(100%-1.5rem)] items-center gap-1 rounded-xl border border-white/10 bg-zinc-950/85 px-3 py-1.5 shadow-lg backdrop-blur-md transition-opacity duration-200 ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        className={`stage-no-drag absolute inset-x-3 bottom-4 z-30 flex w-fit max-w-[calc(100%-1.5rem)] items-center gap-1 rounded-xl border border-white/10 bg-zinc-950/85 px-3 py-1.5 shadow-lg backdrop-blur-md transition-opacity duration-200 ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
       >
         <button
           type="button"
-          title={muted || isSelf ? 'Ativar som' : 'Silenciar'}
-          aria-label={muted || isSelf ? 'Ativar som' : 'Silenciar'}
+          title={isSelf ? 'Sua prévia fica muda para não ecoar' : muted ? 'Ativar som' : 'Silenciar'}
+          aria-label={isSelf ? 'Sua prévia fica muda para não ecoar' : muted ? 'Ativar som' : 'Silenciar'}
           disabled={isSelf}
           onClick={() => onMuted(!muted)}
           className="rounded-md p-1.5 text-ink hover:bg-white/10 disabled:opacity-40"
@@ -271,16 +424,22 @@ export function VideoStage({
         >
           {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
         </button>
-        <div className="relative" onMouseEnter={() => setInfoOpen(true)} onMouseLeave={() => setInfoOpen(false)}>
+        <div
+          className="relative"
+          onMouseEnter={() => setInfoOpen(true)}
+          onMouseLeave={() => setInfoOpen(false)}
+        >
           <button
             type="button"
             title="Detalhes da transmissão"
             aria-label="Detalhes da transmissão"
+            aria-expanded={infoVisible}
+            onClick={() => setInfoPinned((value) => !value)}
             className="rounded-md px-1.5 py-1 text-[10px] font-bold tracking-wide text-ink hover:bg-white/10"
           >
             HD
           </button>
-          {infoOpen && facts.length > 0 ? (
+          {infoVisible && facts.length > 0 ? (
             <div className="absolute bottom-full left-0 z-30 mb-2 w-60 rounded-lg border border-white/10 bg-zinc-950/95 p-2 text-[11px] leading-4 text-ink shadow-lg backdrop-blur-md">
               {facts.map((fact) => (
                 <p key={fact.label} className="flex justify-between gap-3">

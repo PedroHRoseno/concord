@@ -96,7 +96,7 @@ export function Room({ room }: { room: RoomController }) {
           </button>
         </div>
       ) : null}
-      <div className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-line px-3">
+      <div className="room-chrome flex h-9 shrink-0 items-center justify-end gap-2 border-b border-line px-3">
         <div className="flex gap-1 rounded-lg bg-panel p-0.5 ring-1 ring-white/10">
           <button
             type="button"
@@ -166,9 +166,11 @@ export function Room({ room }: { room: RoomController }) {
                 audioRoute={room.audioRoute}
                 onWatch={room.watch}
                 onUnwatch={room.unwatch}
+                onLayoutChange={setLayout}
               />
             </div>
           </div>
+          <div className="room-chrome">
           <ControlBar
             sharing={room.screenLive}
             webcamLive={room.webcamLive}
@@ -180,8 +182,10 @@ export function Room({ room }: { room: RoomController }) {
             onSettings={() => setSettingsOpen(true)}
             onLeave={room.leave}
           />
+          </div>
         </main>
         {sidebarOpen && room.self ? (
+          <div className="room-chrome contents">
           <MemberList
             selfName={room.self.displayName}
             selfId={room.self.peerId}
@@ -190,6 +194,7 @@ export function Room({ room }: { room: RoomController }) {
             onWatch={room.watch}
             onUnwatch={room.unwatch}
           />
+          </div>
         ) : null}
       </div>
       {picker ? <SourcePickerModal mode={picker} onClose={() => setPicker(null)} onConfirm={confirm} /> : null}

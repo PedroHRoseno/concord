@@ -48,6 +48,7 @@ export interface ElectronBridge {
   toggleMaximize: () => Promise<boolean>
   closeWindow: () => Promise<void>
   isMaximized: () => Promise<boolean>
+  setWindowFullscreen: (value: boolean) => Promise<boolean>
   onMaximized: (listener: (maximized: boolean) => void) => () => void
   getVersion: () => Promise<string>
   checkForUpdates: () => Promise<void>

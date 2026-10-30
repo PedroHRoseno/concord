@@ -28,3 +28,4 @@ publish:
   provider: github
   owner: PedroHRoseno
   repo: concord
+  releaseType: release

@@ -83,3 +83,41 @@ summary::-webkit-details-marker {
   outline: 1px solid rgba(255, 255, 255, 0.16);
   outline-offset: -1px;
 }
+
+[data-present='fullscreen'],
+[data-present='pip'] {
+  position: fixed !important;
+  transform: none !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  z-index: 90 !important;
+}
+
+[data-present='fullscreen'] {
+  inset: 0 !important;
+  border-radius: 0 !important;
+}
+
+[data-present='pip'] {
+  top: auto !important;
+  left: auto !important;
+  right: 16px !important;
+  bottom: 16px !important;
+  width: min(360px, 72vw) !important;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+
+[data-present='fullscreen'] [data-hud],
+[data-present='pip'] [data-hud] {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+body.live-fullscreen .room-chrome {
+  display: none !important;
+}

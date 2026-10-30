@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Eye, GripHorizontal } from 'lucide-react'
 import type { StreamMeta, WatcherInfo } from '@renderer/types'
 import { formatBitrateCap } from '@renderer/types'
@@ -67,26 +67,27 @@ export function StreamCard({
   onFocus,
   onExitFocus
 }: StreamCardProps) {
-  const [moving, setMoving] = useState(false)
+  const [inside, setInside] = useState(false)
   const [focusWithin, setFocusWithin] = useState(false)
   const timer = useRef(0)
   const showVideo = entry.isSelf ? Boolean(entry.media) : entry.watching && Boolean(entry.media)
   const connecting = !entry.isSelf && entry.watching && !entry.media
   const watcherNames = entry.watchers.map((watcher) => watcher.displayName).join(', ')
-  const chrome = moving || focusWithin
+  const chrome = inside || focusWithin
   const label = entry.isSelf ? `${entry.name} (você)` : entry.name
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
-  function reveal(): void {
-    setMoving(true)
+  function reveal(event: PointerEvent<HTMLElement>): void {
+    setInside(true)
     window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setMoving(false), 2500)
+    if (event.pointerType === 'touch') timer.current = window.setTimeout(() => setInside(false), 2500)
   }
 
-  function conceal(): void {
+  function conceal(event: PointerEvent<HTMLElement>): void {
+    if (event.pointerType === 'touch') return
     window.clearTimeout(timer.current)
-    setMoving(false)
+    setInside(false)
   }
 
   return (
@@ -94,6 +95,7 @@ export function StreamCard({
       className={`relative overflow-hidden rounded-xl bg-black ring-1 ring-white/10 ${fill ? 'h-full w-full' : 'aspect-video w-full'}`}
       onPointerEnter={reveal}
       onPointerMove={reveal}
+      onPointerDown={reveal}
       onPointerLeave={conceal}
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {

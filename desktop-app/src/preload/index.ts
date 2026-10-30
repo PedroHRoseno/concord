@@ -86,6 +86,7 @@ const api = {
   toggleMaximize: (): Promise<boolean> => ipcRenderer.invoke('window:toggle-maximize'),
   closeWindow: (): Promise<void> => ipcRenderer.invoke('window:close'),
   isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),
+  setWindowFullscreen: (value: boolean): Promise<boolean> => ipcRenderer.invoke('window:set-fullscreen', value),
   onMaximized: (listener: (maximized: boolean) => void): (() => void) => {
     const wrapped = (_event: IpcRendererEvent, maximized: boolean): void => listener(maximized)
     ipcRenderer.on('window:maximized', wrapped)

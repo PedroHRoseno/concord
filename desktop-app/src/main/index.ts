@@ -196,6 +196,12 @@ function registerWindowControls(): void {
     BrowserWindow.fromWebContents(event.sender)?.close()
   })
   ipcMain.handle('window:is-maximized', (event) => BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false)
+  ipcMain.handle('window:set-fullscreen', (event, value: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return false
+    win.setFullScreen(value === true)
+    return win.isFullScreen()
+  })
   ipcMain.handle('room:state', (_event, state: unknown) => {
     if (!state || typeof state !== 'object') return
     const next = state as { inRoom?: unknown; sharing?: unknown }
