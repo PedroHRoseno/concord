@@ -1,0 +1,29 @@
+# owner e repo apontam para o repositório público PedroHRoseno/concord.
+# A URL do sinalizador do instalador entra em VITE_SIGNALING_URL na hora do build.
+appId: com.concord.app
+productName: Concord
+directories:
+  output: release
+files:
+  - out
+  - package.json
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+asarUnpack:
+  - "**/node_modules/loopback-capture/**"
+win:
+  icon: resources/icon.ico
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Concord
+publish:
+  provider: github
+  owner: PedroHRoseno
+  repo: concord

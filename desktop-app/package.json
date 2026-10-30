@@ -1,0 +1,40 @@
+{
+  "name": "concord",
+  "productName": "Concord",
+  "description": "Transmissão de tela e webcam",
+  "author": "Concord",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "node scripts/run.mjs dev",
+    "build": "node scripts/run.mjs build",
+    "preview": "node scripts/run.mjs preview",
+    "build:win": "node scripts/run.mjs build && node scripts/icon.mjs && electron-builder --win --config electron-builder.yml",
+    "publish:win": "node scripts/run.mjs build && node scripts/icon.mjs && electron-builder --win --publish always --config electron-builder.yml",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+  },
+  "dependencies": {
+    "electron": "^45.1.0",
+    "electron-updater": "^6.8.11",
+    "electron-vite": "^6.0.0",
+    "loopback-capture": "^3.0.2",
+    "lucide-react": "^1.64.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron-builder": "^26.18.0",
+    "png-to-ico": "^3.0.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5"
+  }
+}

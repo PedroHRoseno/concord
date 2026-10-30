@@ -1,0 +1,16 @@
+{
+  "name": "screen-sharing",
+  "private": true,
+  "workspaces": [
+    "signaling-server",
+    "desktop-app"
+  ],
+  "scripts": {
+    "dev:signaling": "npm run dev -w signaling-server",
+    "dev:app": "npm run dev -w desktop-app",
+    "start:signaling": "npm run start -w signaling-server",
+    "build:signaling": "npm run build -w signaling-server",
+    "build:win": "npm run build:win -w desktop-app",
+    "publish:win": "npm run publish:win -w desktop-app"
+  }
+}

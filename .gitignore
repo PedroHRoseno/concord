@@ -1,0 +1,17 @@
+node_modules/
+dist/
+out/
+release/
+*.ico
+.DS_Store
+Thumbs.db
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.vercel
+*.local
+coverage/
+*.tmp
+desktop-app/resources/icon.ico

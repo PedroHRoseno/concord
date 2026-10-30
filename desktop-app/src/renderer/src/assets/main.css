@@ -1,0 +1,56 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-app: #1e1f22;
+  --color-panel: #2b2d31;
+  --color-elevated: #313338;
+  --color-blurple: #5865f2;
+  --color-live: #23a55a;
+  --color-ink: #f2f3f5;
+  --color-muted: #b5bac1;
+  --color-danger: #da373c;
+  --color-line: #3f4147;
+  --color-warn: #f0b232;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #1e1f22;
+  color: #f2f3f5;
+  font-family: 'Segoe UI', Inter, system-ui, sans-serif;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #5865f2;
+  outline-offset: 2px;
+}
+
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+input[type='range'] {
+  accent-color: #5865f2;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
