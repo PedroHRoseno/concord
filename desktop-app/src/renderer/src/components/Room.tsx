@@ -96,7 +96,7 @@ export function Room({ room }: { room: RoomController }) {
           </button>
         </div>
       ) : null}
-      <div className="room-chrome flex h-9 shrink-0 items-center justify-end gap-2 border-b border-line px-3">
+      <div className="room-chrome flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3">
         <div className="flex gap-1 rounded-lg bg-panel p-0.5 ring-1 ring-white/10">
           <button
             type="button"
@@ -115,6 +115,7 @@ export function Room({ room }: { room: RoomController }) {
             Foco
           </button>
         </div>
+        <div className="flex items-center gap-2">
         <button
           type="button"
           disabled={entries.length === 0}
@@ -123,7 +124,7 @@ export function Room({ room }: { room: RoomController }) {
             stageRef.current?.organize('grid')
           }}
           title="Organizar grade"
-          className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+          className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted transition-all duration-200 ease-out hover:bg-panel hover:text-ink active:scale-95 disabled:opacity-40"
         >
           <WandSparkles className="h-3.5 w-3.5" aria-hidden="true" />
           Organizar
@@ -137,7 +138,7 @@ export function Room({ room }: { room: RoomController }) {
               stageRef.current?.organize('corner')
             }}
             title="Tela grande + webcam no canto"
-            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink"
+            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted transition-all duration-200 ease-out hover:bg-panel hover:text-ink active:scale-95"
           >
             <PictureInPicture className="h-3.5 w-3.5" aria-hidden="true" />
             Canto
@@ -148,11 +149,12 @@ export function Room({ room }: { room: RoomController }) {
           onClick={() => setSidebarOpen((open) => !open)}
           aria-pressed={sidebarOpen}
           title={sidebarOpen ? 'Recolher a lista da sala' : 'Mostrar a lista da sala'}
-          className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink"
+          className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted transition-all duration-200 ease-out hover:bg-panel hover:text-ink active:scale-95"
         >
           {sidebarOpen ? <PanelRightClose className="h-4 w-4" aria-hidden="true" /> : <PanelRight className="h-4 w-4" aria-hidden="true" />}
           {sidebarOpen ? 'Recolher' : 'Na sala'}
         </button>
+        </div>
       </div>
       <div className="flex min-h-0 flex-1">
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">

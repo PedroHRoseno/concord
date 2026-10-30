@@ -1,3 +1,4 @@
+import { Monitor, Video } from 'lucide-react'
 import type { LocalPublication, PeerView, StreamMeta } from '@renderer/types'
 
 interface Person {
@@ -14,6 +15,11 @@ interface MemberListProps {
   peers: PeerView[]
   onWatch: (streamId: string) => void
   onUnwatch: (streamId: string) => void
+}
+
+function sourceLine(meta: StreamMeta): string {
+  const resolution = meta.resolution === 'native' ? 'Nativa' : meta.resolution
+  return `${meta.sourceName} · ${resolution} ${meta.fps}fps`
 }
 
 function badge(meta: StreamMeta | undefined): { label: string; className: string } {
@@ -47,7 +53,7 @@ export function MemberList({ selfName, selfId, locals, peers, onWatch, onUnwatch
           const webcam = person.streams.find((item) => item.meta.streamType === 'webcam')
           const primary = badge(screen?.meta ?? webcam?.meta)
           return (
-            <li key={person.peerId} className="rounded-xl bg-app px-3 py-3">
+            <li key={person.peerId} className="rounded-xl bg-app px-3 py-3 transition-all duration-200 ease-out">
               <div className="flex items-center justify-between gap-2">
                 <p className="truncate text-sm font-semibold text-ink">{person.self ? `${person.name} (você)` : person.name}</p>
                 <span className="flex shrink-0 gap-1">
@@ -62,22 +68,34 @@ export function MemberList({ selfName, selfId, locals, peers, onWatch, onUnwatch
                   ) : null}
                 </span>
               </div>
+              {screen ? (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted" title={sourceLine(screen.meta)}>
+                  <Monitor className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{sourceLine(screen.meta)}</span>
+                </p>
+              ) : null}
+              {webcam ? (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted" title={sourceLine(webcam.meta)}>
+                  <Video className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{sourceLine(webcam.meta)}</span>
+                </p>
+              ) : null}
               {!person.self && screen ? (
                 <button
                   type="button"
                   onClick={() => (screen.watching ? onUnwatch(screen.meta.streamId) : onWatch(screen.meta.streamId))}
-                  className="mt-2 w-full rounded-lg bg-blurple px-2 py-1.5 text-xs font-semibold text-white"
+                  className={`mt-2 w-full rounded-lg px-2 py-1.5 text-xs font-semibold transition-all duration-200 ease-out active:scale-95 ${screen.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
                 >
-                  {screen.watching ? 'Parar tela' : 'Assistir tela'}
+                  {screen.watching ? 'Deixar de assistir' : 'Assistir live'}
                 </button>
               ) : null}
               {!person.self && webcam ? (
                 <button
                   type="button"
                   onClick={() => (webcam.watching ? onUnwatch(webcam.meta.streamId) : onWatch(webcam.meta.streamId))}
-                  className="mt-2 w-full rounded-lg bg-elevated px-2 py-1.5 text-xs font-semibold text-ink ring-1 ring-line"
+                  className={`mt-2 w-full rounded-lg px-2 py-1.5 text-xs font-semibold transition-all duration-200 ease-out active:scale-95 ${webcam.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
                 >
-                  {webcam.watching ? 'Parar webcam' : 'Assistir webcam'}
+                  {webcam.watching ? 'Deixar de assistir' : 'Assistir webcam'}
                 </button>
               ) : null}
             </li>

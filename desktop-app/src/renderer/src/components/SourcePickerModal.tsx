@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AppWindow, Monitor, RefreshCw, X } from 'lucide-react'
 import {
   AUDIO_BITRATES,
@@ -164,8 +165,8 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
     })
   }
 
-  return (
-    <div className={embedded ? 'flex h-full flex-col bg-elevated' : 'fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4'} role="presentation">
+  const node = (
+    <div className={embedded ? 'flex h-full flex-col bg-elevated' : 'fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4'} role="presentation">
       <div
         role="dialog"
         aria-modal="true"
@@ -173,7 +174,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
         className={
           embedded
             ? 'flex h-full w-full flex-col overflow-hidden bg-elevated'
-            : 'flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-elevated shadow-2xl ring-1 ring-white/10'
+            : 'modal-pop flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-elevated shadow-2xl ring-1 ring-white/10'
         }
       >
         <header className="titlebar-drag flex items-center justify-between border-b border-line px-4 py-3">
@@ -365,18 +366,18 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
           </label>
           <div className="flex items-center justify-end gap-2 sm:col-span-2">
             {onStop ? (
-              <button type="button" onClick={onStop} className="mr-auto h-10 rounded-lg bg-danger px-4 text-sm font-semibold text-white">
+              <button type="button" onClick={onStop} className="mr-auto h-10 rounded-lg bg-danger px-4 text-sm font-semibold text-white transition-all duration-200 ease-out active:scale-95">
                 Parar transmissão
               </button>
             ) : null}
-            <button type="button" onClick={onClose} className="h-10 rounded-lg px-4 text-sm text-muted hover:bg-app hover:text-ink">
+            <button type="button" onClick={onClose} className="h-10 rounded-lg px-4 text-sm text-muted transition-all duration-200 ease-out hover:bg-app hover:text-ink active:scale-95">
               Cancelar
             </button>
             <button
               type="button"
               disabled={!selected}
               onClick={confirm}
-              className="h-10 rounded-lg bg-blurple px-4 text-sm font-semibold text-white hover:bg-[#4752c4] disabled:cursor-not-allowed disabled:opacity-40"
+              className="h-10 rounded-lg bg-blurple px-4 text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {mode === 'swap' ? 'Trocar' : 'Transmitir'}
             </button>
@@ -385,4 +386,6 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
       </div>
     </div>
   )
+  if (embedded) return node
+  return createPortal(node, document.body)
 }

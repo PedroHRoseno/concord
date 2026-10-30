@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Copy, Minus, Square, X } from 'lucide-react'
 import logo from '@renderer/assets/logo.png'
 import type { ConnectionStatus } from '@renderer/types'
+import { UpdateDialog, type UpdateStatus } from '@renderer/components/UpdateDialog'
 
 const LABELS: Record<ConnectionStatus, string> = {
   connecting: 'Conectando',
@@ -67,22 +68,22 @@ function WindowControls() {
 
 export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarProps) {
   const [version, setVersion] = useState('')
-  const [progress, setProgress] = useState<number | null>(null)
-  const [ready, setReady] = useState(false)
+  const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const seenVersion = useRef<string | null>(null)
+  const pending = update?.phase === 'available' || update?.phase === 'downloading' || update?.phase === 'ready'
 
   useEffect(() => {
     const readVersion = window.electronAPI?.getVersion
     if (readVersion) void readVersion().then(setVersion).catch(() => undefined)
-    const stopProgress = window.electronAPI?.onUpdateProgress?.(setProgress)
-    const stopReady = window.electronAPI?.onUpdateReady?.(() => {
-      setProgress(null)
-      setReady(true)
-    })
-    return () => {
-      stopProgress?.()
-      stopReady?.()
-    }
+    return window.electronAPI?.onUpdateStatus?.(setUpdate)
   }, [])
+
+  useEffect(() => {
+    if (update?.phase !== 'available' || !update.version || seenVersion.current === update.version) return
+    seenVersion.current = update.version
+    setUpdateOpen(true)
+  }, [update])
 
   return (
     <header className="titlebar-drag flex h-12 shrink-0 items-center border-b border-line bg-elevated">
@@ -95,17 +96,20 @@ export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarPro
       </div>
       <div className="no-drag flex h-full items-center gap-3 pr-2 text-sm text-muted">
         {version ? <span>v{version}</span> : null}
-        {ready ? (
-          <button type="button" onClick={() => void window.electronAPI?.installUpdate()} className="font-semibold text-live">
-            Nova versão pronta! Reiniciar e atualizar agora
-          </button>
-        ) : progress !== null ? (
-          <span>Baixando {Math.round(progress)}%</span>
-        ) : window.electronAPI?.checkForUpdates ? (
-          <button type="button" onClick={() => void window.electronAPI?.checkForUpdates()} className="hover:text-ink">
+        {window.electronAPI?.checkForUpdates ? (
+          <button
+            type="button"
+            onClick={() => {
+              setUpdateOpen(true)
+              if (!pending) void window.electronAPI?.checkForUpdates?.()
+            }}
+            className="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-ink"
+          >
+            {pending ? <span className="h-2 w-2 animate-pulse rounded-full bg-live" aria-hidden="true" /> : null}
             Verificar atualizações
           </button>
         ) : null}
+        {updateOpen ? <UpdateDialog status={update} onClose={() => setUpdateOpen(false)} /> : null}
         {displayName ? <span className="max-w-40 truncate">{displayName}</span> : null}
         {typeof peerCount === 'number' ? (
           <span>

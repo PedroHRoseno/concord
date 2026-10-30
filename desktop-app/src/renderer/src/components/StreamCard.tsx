@@ -129,16 +129,18 @@ export function StreamCard({
         )}
       </div>
       <div
-        className={`stage-drag absolute inset-x-0 top-0 z-30 flex cursor-grab items-center gap-2 bg-gradient-to-b from-black/80 via-black/40 to-transparent px-2.5 pb-6 pt-2 text-ink transition-opacity duration-200 active:cursor-grabbing ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`stage-drag absolute inset-x-0 top-0 z-30 flex cursor-grab items-start gap-2 px-2.5 pt-2 text-ink transition-opacity duration-200 active:cursor-grabbing ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
       >
-        <GripHorizontal className="h-4 w-4 shrink-0 text-white/80" aria-hidden="true" />
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{label}</h2>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-live/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-live">
+        <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 shadow-md backdrop-blur-md">
+          <GripHorizontal className="h-4 w-4 shrink-0 text-white/80" aria-hidden="true" />
+          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{label}</h2>
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-live shadow-md backdrop-blur-md">
           <span className="h-1.5 w-1.5 rounded-full bg-live" aria-hidden="true" />
           Ao vivo
         </span>
         <span
-          className="inline-flex shrink-0 items-center gap-1 text-xs text-white/90"
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 text-xs text-white shadow-md backdrop-blur-md"
           title={entry.watchers.length === 0 ? 'Ninguém assistindo' : watcherNames}
         >
           <Eye className="h-3.5 w-3.5" aria-hidden="true" />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import type { WebcamSettings } from '@renderer/types'
 
@@ -38,10 +39,10 @@ export function WebcamSheet({ onClose, onConfirm }: WebcamSheetProps) {
 
   const selected = devices.find((device) => device.deviceId === deviceId)
 
-  return (
-    <div className="absolute inset-0 z-40 flex items-end justify-center bg-black/50 p-4" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/50 p-4" onClick={onClose}>
       <form
-        className="w-full max-w-md rounded-2xl bg-elevated p-4 shadow-2xl ring-1 ring-white/10"
+        className="modal-pop w-full max-w-md rounded-2xl bg-elevated p-4 shadow-2xl ring-1 ring-white/10 transition-all duration-200 ease-out"
         onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault()
@@ -88,11 +89,12 @@ export function WebcamSheet({ onClose, onConfirm }: WebcamSheetProps) {
         <button
           type="submit"
           disabled={devices.length === 0}
-          className="mt-4 h-10 w-full rounded-lg bg-blurple text-sm font-semibold text-white disabled:opacity-40"
+          className="mt-4 h-10 w-full rounded-lg bg-blurple text-sm font-semibold text-white transition-all duration-200 ease-out active:scale-95 disabled:opacity-40"
         >
           Transmitir webcam
         </button>
       </form>
-    </div>
+    </div>,
+    document.body
   )
 }

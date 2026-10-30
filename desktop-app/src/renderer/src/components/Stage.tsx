@@ -54,6 +54,8 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
   const entriesRef = useRef(entries)
   const sizeRef = useRef({ w: 0, h: 0 })
   const customRef = useRef(false)
+  const shrunkRef = useRef(false)
+  const prevSizeRef = useRef<{ w: number; h: number } | null>(null)
   const pendingRef = useRef<'grid' | 'corner' | null>(null)
   const sizeChangedRef = useRef(false)
   const moveRef = useRef(false)
@@ -89,8 +91,46 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     const missing = list.filter((entry) => !tilesRef.current[entry.id])
     const forced = pendingRef.current
     const sizeChanged = sizeChangedRef.current
+    const oldSize = prevSizeRef.current
     sizeChangedRef.current = false
+    prevSizeRef.current = null
     const empty = Object.keys(tilesRef.current).length === 0
+    if (!forced && sizeChanged && oldSize && oldSize.w >= 8 && oldSize.h >= 8 && list.length > 0 && !empty) {
+      if (list.length === 1 && !shrunkRef.current) {
+        const box = equalGrid(1, w, h)[0]
+        const current = tilesRef.current[list[0].id]
+        if (box) {
+          commit({ [list[0].id]: { ...box, z: current?.z ?? 10 } }, true)
+          return
+        }
+      } else if (customRef.current) {
+        const sx = w / oldSize.w
+        const sy = h / oldSize.h
+        const next: Record<string, Tile> = {}
+        for (const entry of list) {
+          const tile = tilesRef.current[entry.id]
+          if (!tile) continue
+          const scaled = clampTile(
+            {
+              x: Math.round(tile.x * sx),
+              y: Math.round(tile.y * sy),
+              w: Math.max(1, Math.round(tile.w * sx)),
+              h: Math.max(1, Math.round(tile.h * sy))
+            },
+            w,
+            h
+          )
+          next[entry.id] = { ...tile, ...scaled }
+        }
+        for (const entry of list) {
+          if (next[entry.id]) continue
+          zRef.current = Math.min(40, Math.max(10, zRef.current + 1))
+          next[entry.id] = { ...placeNew(Object.values(next), w, h), z: zRef.current }
+        }
+        commit(next, true)
+        return
+      }
+    }
     if (forced || (!customRef.current && (missing.length > 0 || removed || empty || sizeChanged))) {
       if (forced) pendingRef.current = null
       const useCorner =
@@ -100,17 +140,22 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
       const boxes = useCorner ? cornerLayout(list.map((entry) => entry.meta.streamType), w, h) : equalGrid(list.length, w, h)
       const next: Record<string, Tile> = {}
       list.forEach((entry, index) => {
-        next[entry.id] = { ...boxes[index], z: (entry.meta.streamType === 'webcam' ? 40 : 1) + index }
+        const base = entry.meta.streamType === 'webcam' ? 30 : 10
+        next[entry.id] = { ...boxes[index], z: Math.min(40, base + index) }
       })
-      zRef.current = list.length + 50
-      if (forced) customRef.current = false
+      zRef.current = Math.max(10, ...Object.values(next).map((tile) => tile.z))
+      if (forced) {
+        customRef.current = false
+        shrunkRef.current = false
+      }
       commit(next, true)
       return
     }
     if (missing.length > 0) {
       const next = { ...tilesRef.current }
       for (const entry of missing) {
-        next[entry.id] = { ...placeNew(Object.values(next), w, h), z: ++zRef.current }
+        zRef.current = Math.min(40, Math.max(10, zRef.current + 1))
+        next[entry.id] = { ...placeNew(Object.values(next), w, h), z: zRef.current }
       }
       commit(next, true)
       return
@@ -133,6 +178,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     organize(mode) {
       pendingRef.current = mode
       customRef.current = false
+      shrunkRef.current = false
       relayoutRef.current()
     }
   }))
@@ -148,7 +194,9 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
       const h = Math.round(rect.height)
       if (w < 8 || h < 8) return
       const previous = sizeRef.current
-      sizeChangedRef.current = previous.w !== w || previous.h !== h
+      const changed = previous.w !== w || previous.h !== h
+      sizeChangedRef.current = changed
+      if (changed && previous.w >= 8 && previous.h >= 8) prevSizeRef.current = { w: previous.w, h: previous.h }
       sizeRef.current = { w, h }
       if (sizeChangedRef.current || pendingRef.current) relayoutRef.current()
     })
@@ -180,9 +228,25 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
   }
 
   function bringToFront(id: string): void {
-    const tile = tilesRef.current[id]
-    if (!tile || tile.z === zRef.current) return
-    const next = { ...tilesRef.current, [id]: { ...tile, z: ++zRef.current } }
+    const tiles = tilesRef.current
+    const tile = tiles[id]
+    if (!tile) return
+    const top = Math.max(...Object.values(tiles).map((item) => item.z))
+    if (tile.z === top) return
+    const nextZ = Math.min(40, top + 1)
+    const next = { ...tiles }
+    if (nextZ === top) {
+      const others = Object.entries(tiles)
+        .filter(([key]) => key !== id)
+        .sort((a, b) => a[1].z - b[1].z)
+      others.forEach(([key, value], index) => {
+        next[key] = { ...value, z: Math.min(39, 10 + index) }
+      })
+      next[id] = { ...tile, z: Math.min(40, 10 + others.length) }
+    } else {
+      next[id] = { ...tile, z: nextZ }
+    }
+    zRef.current = next[id].z
     tilesRef.current = next
     setTiles(next)
   }
@@ -203,6 +267,9 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     }
     tilesRef.current = next
     customRef.current = true
+    if (node && sizeRef.current.w >= 8 && sizeRef.current.h >= 8 && Object.keys(next).length <= 1) {
+      shrunkRef.current = node.offsetWidth < sizeRef.current.w * 0.85 || node.offsetHeight < sizeRef.current.h * 0.85
+    }
     setTiles(next)
   }
 

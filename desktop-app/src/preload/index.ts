@@ -12,6 +12,18 @@ interface QuickShareSettings {
   contentHint: 'motion' | 'detail'
 }
 
+interface UpdateStatus {
+  phase: 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'error'
+  current?: string
+  version?: string
+  notes?: string
+  percent?: number
+  bytesPerSecond?: number
+  transferred?: number
+  total?: number
+  message?: string
+}
+
 let audioPort: MessagePort | null = null
 
 const api = {
@@ -94,16 +106,12 @@ const api = {
   },
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke('update:check'),
+  downloadUpdate: (): Promise<void> => ipcRenderer.invoke('update:download'),
   installUpdate: (): Promise<void> => ipcRenderer.invoke('update:install'),
-  onUpdateProgress: (listener: (percent: number) => void): (() => void) => {
-    const wrapped = (_event: IpcRendererEvent, percent: number): void => listener(percent)
-    ipcRenderer.on('update:progress', wrapped)
-    return () => ipcRenderer.removeListener('update:progress', wrapped)
-  },
-  onUpdateReady: (listener: () => void): (() => void) => {
-    const wrapped = (): void => listener()
-    ipcRenderer.on('update:ready', wrapped)
-    return () => ipcRenderer.removeListener('update:ready', wrapped)
+  onUpdateStatus: (listener: (status: UpdateStatus) => void): (() => void) => {
+    const wrapped = (_event: IpcRendererEvent, status: UpdateStatus): void => listener(status)
+    ipcRenderer.on('update:status', wrapped)
+    return () => ipcRenderer.removeListener('update:status', wrapped)
   }
 }
 

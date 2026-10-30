@@ -1,4 +1,11 @@
 import { buildIceServers } from '@renderer/lib/ice'
+import {
+  playStreamStartSound,
+  playStreamStopSound,
+  playUserJoinSound,
+  playUserLeaveSound,
+  playViewerJoinedMyStreamSound
+} from '@renderer/utils/soundEffects'
 import { applyVideoEncoding, preferOpus, preferVideoCodecs, tuneOpus } from '@renderer/lib/sdp'
 import { SignalingClient } from '@renderer/lib/signaling'
 import {
@@ -151,6 +158,7 @@ export class MeshSession {
       if (link?.role === 'host' && link.streamId === streamId) this.closeLink(key)
     }
     current.stream.getTracks().forEach((track) => track.stop())
+    playStreamStopSound()
     if (this.locals.size === 0) this.releaseSilent()
     this.socket.send({ type: 'stream-meta', streamId, meta: null })
     this.setCaptureActive(this.locals.size > 0)
@@ -197,6 +205,7 @@ export class MeshSession {
     this.setCaptureActive(true)
     this.emitLocals()
     this.emit()
+    playStreamStartSound()
   }
 
   private async hotSwap(previous: LocalPub, stream: MediaStream, settings: CaptureSettings): Promise<void> {
@@ -244,6 +253,10 @@ export class MeshSession {
         this.emit()
         return
       case 'peer-joined':
+        if (!this.peers.has(message.peer.peerId)) {
+          playUserJoinSound()
+          if (message.peer.streams.length > 0) playStreamStartSound()
+        }
         this.peers.set(message.peer.peerId, this.toRemote(message.peer))
         for (const meta of message.peer.streams) this.maybeRewatch(meta.streamId)
         this.emit()
@@ -295,6 +308,7 @@ export class MeshSession {
   private handlePeerLeft(peerId: string): void {
     const peer = this.peers.get(peerId)
     if (peer) {
+      playUserLeaveSound()
       for (const streamId of peer.streams.keys()) {
         if (this.watching.has(streamId)) this.watchMemory.set(streamId, Date.now() + 8000)
         this.watching.delete(streamId)
@@ -313,6 +327,8 @@ export class MeshSession {
     const peer = this.peers.get(peerId)
     if (!peer) return
     if (!meta) {
+      const had = peer.streams.has(streamId)
+      if (had) playStreamStopSound()
       peer.streams.delete(streamId)
       peer.watchers.delete(streamId)
       this.watchMemory.delete(streamId)
@@ -320,7 +336,9 @@ export class MeshSession {
       this.remoteStreams.delete(streamId)
       this.closeLink(linkKey(streamId, this.peerId))
     } else {
+      const had = peer.streams.has(streamId)
       peer.streams.set(streamId, meta)
+      if (!had) playStreamStartSound()
       this.maybeRewatch(streamId)
     }
     this.emit()
@@ -331,6 +349,7 @@ export class MeshSession {
       const list = this.localWatchers.get(streamId) ?? []
       if (!list.some((item) => item.peerId === watcher.peerId)) {
         this.localWatchers.set(streamId, [...list, watcher])
+        playViewerJoinedMyStreamSound()
       }
       this.emitLocals()
       return
