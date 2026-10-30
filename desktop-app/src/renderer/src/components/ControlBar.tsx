@@ -23,17 +23,19 @@ export function ControlBar({ sharing, webcamLive, busy, onShare, onSwap, onStop,
   }, [])
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex justify-center px-4">
-      <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-panel/95 px-3 py-2 shadow-2xl ring-1 ring-white/10">
-        <button
-          type="button"
-          disabled={sharing || busy}
-          onClick={onShare}
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-blurple px-3 text-sm font-semibold text-white hover:bg-[#4752c4] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <ScreenShare className="h-4 w-4" aria-hidden="true" />
-          [{hotkey}] Compartilhar tela
-        </button>
+    <div className="flex shrink-0 justify-center px-4 py-3">
+      <div className="flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-panel/95 px-3 py-2 shadow-2xl ring-1 ring-white/10">
+        {sharing ? null : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onShare}
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-blurple px-3 text-sm font-semibold text-white hover:bg-[#4752c4] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ScreenShare className="h-4 w-4" aria-hidden="true" />
+            [{hotkey}] Compartilhar tela
+          </button>
+        )}
         <button
           type="button"
           disabled={!sharing || busy}
@@ -41,7 +43,7 @@ export function ControlBar({ sharing, webcamLive, busy, onShare, onSwap, onStop,
           className="inline-flex h-10 items-center gap-2 rounded-xl bg-elevated px-3 text-sm text-ink ring-1 ring-line hover:bg-app disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
-          Trocar tela/qualidade
+          {sharing ? `Trocar tela/qualidade [${hotkey}]` : 'Trocar tela/qualidade'}
         </button>
         <button
           type="button"

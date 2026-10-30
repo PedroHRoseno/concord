@@ -26,6 +26,25 @@ body {
   font-family: 'Segoe UI', Inter, system-ui, sans-serif;
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f4147 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3f4147;
+  border-radius: 999px;
+}
+
 button,
 input,
 select {
@@ -53,4 +72,14 @@ input[type='range'] {
 
 summary::-webkit-details-marker {
   display: none;
+}
+
+.stage-canvas[data-gesturing] video,
+.stage-canvas[data-gesturing] iframe {
+  pointer-events: none;
+}
+
+.stage-tile:hover {
+  outline: 1px solid rgba(255, 255, 255, 0.16);
+  outline-offset: -1px;
 }

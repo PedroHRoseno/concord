@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 interface QuickShareSettings {
   sourceId: string
   sourceName: string
-  audioMode: 'none' | 'app' | 'device'
+  audioMode: 'none' | 'system' | 'window' | 'device'
   audioDeviceId: string
   resolution: '720p' | '1080p' | '1440p' | 'native'
   fps: 30 | 60
@@ -11,6 +11,8 @@ interface QuickShareSettings {
   audioBitrate: number
   contentHint: 'motion' | 'detail'
 }
+
+let audioPort: MessagePort | null = null
 
 const api = {
   getDesktopSources: (): Promise<
@@ -30,13 +32,29 @@ const api = {
   setCaptureActive: (active: boolean): Promise<void> => ipcRenderer.invoke('capture:set-active', active),
   getMicrophoneAccess: (): Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'> =>
     ipcRenderer.invoke('audio:microphone-access'),
-  startProcessAudio: (sourceId: string): Promise<boolean> => ipcRenderer.invoke('audio:process-start', sourceId),
-  stopProcessAudio: (): Promise<void> => ipcRenderer.invoke('audio:process-stop'),
-  onProcessPcm: (listener: (bytes: Uint8Array) => void): (() => void) => {
-    const wrapped = (_event: IpcRendererEvent, bytes: Uint8Array): void => listener(bytes)
-    ipcRenderer.on('audio:pcm', wrapped)
-    return () => ipcRenderer.removeListener('audio:pcm', wrapped)
+  connectAudioLoopback: (onChunk: (bytes: Uint8Array) => void): void => {
+    audioPort?.close()
+    const { port1, port2 } = new MessageChannel()
+    audioPort = port2
+    port2.onmessage = (event: MessageEvent<Uint8Array>) => {
+      const bytes = event.data
+      if (!(bytes instanceof Uint8Array) || bytes.byteLength < 2) return
+      const copy = new Uint8Array(bytes.byteLength)
+      copy.set(bytes)
+      onChunk(copy)
+    }
+    port2.start()
+    ipcRenderer.postMessage('audio-loopback-port', null, [port1])
   },
+  startAudioLoopback: (
+    sourceId: string
+  ): Promise<{ ok: boolean; isolated: boolean; pid: number | null }> => ipcRenderer.invoke('audio-loopback-start', sourceId),
+  stopAudioLoopback: (): Promise<void> => {
+    audioPort?.close()
+    audioPort = null
+    return ipcRenderer.invoke('audio-loopback-stop')
+  },
+  getOsUsername: (): Promise<string> => ipcRenderer.invoke('os:username'),
   getHotkey: (): Promise<string> => ipcRenderer.invoke('hotkey:get'),
   setHotkey: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('hotkey:set', accelerator),
   onHotkey: (listener: (accelerator: string) => void): (() => void) => {

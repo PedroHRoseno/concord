@@ -1,9 +1,10 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import os from 'node:os'
 import { join } from 'path'
 import { registerCapture } from './capture'
 import { registerHotkey } from './hotkey'
 import { resourcePath } from './paths'
-import { registerProcessAudio } from './process-audio'
+import { registerAudioLoopback } from './audioLoopback'
 import { registerUpdates } from './updates'
 
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
@@ -214,11 +215,18 @@ function registerWindowControls(): void {
     closePicker()
   })
   ipcMain.handle('picker:room-state', () => roomState)
+  ipcMain.handle('os:username', () => {
+    try {
+      return os.userInfo().username
+    } catch {
+      return ''
+    }
+  })
 }
 
 app.whenReady().then(() => {
   registerCapture()
-  registerProcessAudio()
+  registerAudioLoopback()
   registerUpdates()
   registerWindowControls()
   registerHotkey(openShare)

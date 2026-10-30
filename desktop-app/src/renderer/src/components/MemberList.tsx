@@ -41,7 +41,7 @@ export function MemberList({ selfName, selfId, locals, peers, onWatch, onUnwatch
   return (
     <aside className="flex w-64 shrink-0 flex-col border-l border-line bg-elevated">
       <h2 className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Na sala</h2>
-      <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-28">
+      <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3">
         {people.map((person) => {
           const screen = person.streams.find((item) => item.meta.streamType === 'screen')
           const webcam = person.streams.find((item) => item.meta.streamType === 'webcam')

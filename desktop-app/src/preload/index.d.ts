@@ -15,7 +15,7 @@ export interface CapturePrepareOptions {
 export interface QuickShareSettings {
   sourceId: string
   sourceName: string
-  audioMode: 'none' | 'app' | 'device'
+  audioMode: 'none' | 'system' | 'window' | 'device'
   audioDeviceId: string
   resolution: '720p' | '1080p' | '1440p' | 'native'
   fps: 30 | 60
@@ -29,9 +29,10 @@ export interface ElectronBridge {
   prepareCapture: (options: CapturePrepareOptions) => Promise<boolean>
   setCaptureActive: (active: boolean) => Promise<void>
   getMicrophoneAccess: () => Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'>
-  startProcessAudio: (sourceId: string) => Promise<boolean>
-  stopProcessAudio: () => Promise<void>
-  onProcessPcm: (listener: (bytes: Uint8Array) => void) => () => void
+  connectAudioLoopback: (onChunk: (bytes: Uint8Array) => void) => void
+  startAudioLoopback: (sourceId: string) => Promise<{ ok: boolean; isolated: boolean; pid: number | null }>
+  stopAudioLoopback: () => Promise<void>
+  getOsUsername: () => Promise<string>
   getHotkey: () => Promise<string>
   setHotkey: (accelerator: string) => Promise<boolean>
   onHotkey: (listener: (accelerator: string) => void) => () => void

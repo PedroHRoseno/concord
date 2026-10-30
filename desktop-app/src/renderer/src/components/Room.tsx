@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
-import { Columns2, LayoutGrid } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Columns2, LayoutGrid, PanelRight, PanelRightClose, PictureInPicture, WandSparkles } from 'lucide-react'
 import { ControlBar } from '@renderer/components/ControlBar'
 import { MemberList } from '@renderer/components/MemberList'
 import { SettingsSheet } from '@renderer/components/SettingsSheet'
 import { SourcePickerModal } from '@renderer/components/SourcePickerModal'
-import { Stage } from '@renderer/components/Stage'
+import { Stage, type StageHandle } from '@renderer/components/Stage'
 import { type StageEntry } from '@renderer/components/StreamCard'
 import { WebcamSheet } from '@renderer/components/WebcamSheet'
 import type { RoomController } from '@renderer/hooks/useRoom'
@@ -15,6 +15,8 @@ export function Room({ room }: { room: RoomController }) {
   const [webcamOpen, setWebcamOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [layout, setLayout] = useState<'grid' | 'focus'>('grid')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const stageRef = useRef<StageHandle>(null)
   const entries: StageEntry[] = []
 
   if (room.self) {
@@ -83,7 +85,7 @@ export function Room({ room }: { room: RoomController }) {
       ) : null}
       {room.isolateAudio ? (
         <p className="bg-blurple/15 px-4 py-2 text-sm text-ink" role="status">
-          As outras transmissões estão mudas enquanto o áudio do aplicativo está no ar, para a voz delas não voltar na captura.
+          As outras transmissões estão mudas enquanto o áudio do sistema está no ar, para a voz delas não voltar na captura.
         </p>
       ) : null}
       {room.error ? (
@@ -94,33 +96,79 @@ export function Room({ room }: { room: RoomController }) {
           </button>
         </div>
       ) : null}
+      <div className="flex h-9 shrink-0 items-center justify-end gap-2 border-b border-line px-3">
+        <div className="flex gap-1 rounded-lg bg-panel p-0.5 ring-1 ring-white/10">
+          <button
+            type="button"
+            onClick={() => setLayout('grid')}
+            className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs ${layout === 'grid' ? 'bg-blurple text-white' : 'text-muted'}`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+            Grade
+          </button>
+          <button
+            type="button"
+            onClick={() => setLayout('focus')}
+            className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs ${layout === 'focus' ? 'bg-blurple text-white' : 'text-muted'}`}
+          >
+            <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Foco
+          </button>
+        </div>
+        <button
+          type="button"
+          disabled={entries.length === 0}
+          onClick={() => {
+            setLayout('grid')
+            stageRef.current?.organize('grid')
+          }}
+          title="Organizar grade"
+          className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+        >
+          <WandSparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          Organizar
+        </button>
+        {entries.some((entry) => entry.meta.streamType === 'screen') &&
+        entries.some((entry) => entry.meta.streamType === 'webcam') ? (
+          <button
+            type="button"
+            onClick={() => {
+              setLayout('grid')
+              stageRef.current?.organize('corner')
+            }}
+            title="Tela grande + webcam no canto"
+            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink"
+          >
+            <PictureInPicture className="h-3.5 w-3.5" aria-hidden="true" />
+            Canto
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setSidebarOpen((open) => !open)}
+          aria-pressed={sidebarOpen}
+          title={sidebarOpen ? 'Recolher a lista da sala' : 'Mostrar a lista da sala'}
+          className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink"
+        >
+          {sidebarOpen ? <PanelRightClose className="h-4 w-4" aria-hidden="true" /> : <PanelRight className="h-4 w-4" aria-hidden="true" />}
+          {sidebarOpen ? 'Recolher' : 'Na sala'}
+        </button>
+      </div>
       <div className="flex min-h-0 flex-1">
-        <main className="relative min-h-0 min-w-0 flex-1">
-          <div className="absolute left-4 top-3 z-20 flex gap-1 rounded-xl bg-panel/95 p-1 ring-1 ring-white/10">
-            <button
-              type="button"
-              onClick={() => setLayout('grid')}
-              className={`inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs ${layout === 'grid' ? 'bg-blurple text-white' : 'text-muted'}`}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
-              Grade
-            </button>
-            <button
-              type="button"
-              onClick={() => setLayout('focus')}
-              className={`inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs ${layout === 'focus' ? 'bg-blurple text-white' : 'text-muted'}`}
-            >
-              <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Foco
-            </button>
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <div className="absolute inset-0">
+              <Stage
+                ref={stageRef}
+                entries={entries}
+                layout={layout}
+                isolateAudio={room.isolateAudio}
+                audioRoute={room.audioRoute}
+                onWatch={room.watch}
+                onUnwatch={room.unwatch}
+              />
+            </div>
           </div>
-          <Stage
-            entries={entries}
-            layout={layout}
-            isolateAudio={room.isolateAudio}
-            onWatch={room.watch}
-            onUnwatch={room.unwatch}
-          />
           <ControlBar
             sharing={room.screenLive}
             webcamLive={room.webcamLive}
@@ -133,7 +181,7 @@ export function Room({ room }: { room: RoomController }) {
             onLeave={room.leave}
           />
         </main>
-        {room.self ? (
+        {sidebarOpen && room.self ? (
           <MemberList
             selfName={room.self.displayName}
             selfId={room.self.peerId}

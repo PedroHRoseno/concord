@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { audioCaptureRoute, type DesktopAudioRoute } from '@renderer/lib/audio-loopback'
 import {
   captureDesktop,
   captureErrorMessage,
@@ -73,7 +74,8 @@ export function useRoom() {
   const [error, setError] = useState<string | null>(null)
   const [audioWarning, setAudioWarning] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [isolateAudio, setIsolateAudio] = useState(false)
+  const [audioRoute, setAudioRoute] = useState<DesktopAudioRoute>('none')
+  const isolateAudio = audioRoute === 'system'
 
   useEffect(() => {
     return () => {
@@ -102,7 +104,10 @@ export function useRoom() {
         onStatus: setStatus,
         onSnapshot: (snapshot) => setPeers(snapshot.peers),
         onLocals: (publications) => {
-          if (!publications.some((item) => item.meta.streamType === 'screen')) releaseSystemAudioAnchor()
+          if (!publications.some((item) => item.meta.streamType === 'screen')) {
+            releaseSystemAudioAnchor()
+            setAudioRoute('none')
+          }
           setLocals(publications)
         },
         onError: setError
@@ -113,7 +118,7 @@ export function useRoom() {
     setPeers([])
     setLocals([])
     setAudioWarning(null)
-    setIsolateAudio(false)
+    setAudioRoute('none')
     setError(null)
     setPhase('room')
     session.start()
@@ -129,9 +134,14 @@ export function useRoom() {
     setSelf(null)
     setError(null)
     setAudioWarning(null)
-    setIsolateAudio(false)
+    setAudioRoute('none')
     setStatus('disconnected')
     setBusy(false)
+    try {
+      sessionStorage.setItem('concord.manualDisconnect', '1')
+    } catch {
+      // O lobby segue visível mesmo se o navegador bloquear a sessão.
+    }
   }, [])
 
   const publish = useCallback(async (settings: CaptureSettings) => {
@@ -143,12 +153,12 @@ export function useRoom() {
     try {
       stream = await captureDesktop(settings)
       setAudioWarning(systemAudioWarning(stream, settings))
-      setIsolateAudio(settings.audioMode === 'app')
+      setAudioRoute(audioCaptureRoute())
       await session.publish(stream, settings, 'screen')
     } catch (caught) {
       stream?.getTracks().forEach((track) => track.stop())
       releaseSystemAudioAnchor()
-      setIsolateAudio(false)
+      setAudioRoute('none')
       setError(captureErrorMessage(caught))
     } finally {
       setBusy(false)
@@ -177,7 +187,7 @@ export function useRoom() {
     if (streamType === 'screen') {
       releaseSystemAudioAnchor()
       setAudioWarning(null)
-      setIsolateAudio(false)
+      setAudioRoute('none')
     }
   }, [])
 
@@ -202,6 +212,7 @@ export function useRoom() {
     self,
     error,
     audioWarning,
+    audioRoute,
     busy,
     isolateAudio,
     screenLive,

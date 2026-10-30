@@ -1,7 +1,6 @@
 import { RESOLUTION_OPTIONS, type CaptureSettings, type WebcamSettings } from '@renderer/types'
-import { attachProcessAudio, stopProcessAudio } from '@renderer/lib/process-audio'
+import { attachDesktopAudio, stopDesktopAudio } from '@renderer/lib/audio-loopback'
 
-let audioAnchor: MediaStream | null = null
 let audioFailure: string | null = null
 
 function videoConstraints(settings: CaptureSettings, strict: boolean): MediaTrackConstraints {
@@ -26,10 +25,7 @@ function liveAudioTrack(stream: MediaStream): MediaStreamTrack | null {
 }
 
 export function releaseSystemAudioAnchor(): void {
-  stopProcessAudio()
-  const anchor = audioAnchor
-  audioAnchor = null
-  anchor?.getTracks().forEach((track) => track.stop())
+  stopDesktopAudio()
 }
 
 async function prepare(settings: CaptureSettings, shareAudio: boolean, loopbackWithScreen = false): Promise<void> {
@@ -74,38 +70,6 @@ async function audioFailureMessage(): Promise<string> {
   return 'A tela foi compartilhada, mas o Windows não iniciou o áudio do sistema. Desative os aprimoramentos de áudio do alto-falante padrão e tente de novo.'
 }
 
-async function takeSystemAudio(settings: CaptureSettings, loopbackWithScreen: boolean): Promise<MediaStreamTrack | null> {
-  await prepare(settings, true, loopbackWithScreen)
-  try {
-    const loopback = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-    const track = liveAudioTrack(loopback)
-    if (!track) {
-      loopback.getTracks().forEach((item) => item.stop())
-      audioFailure = await audioFailureMessage()
-      return null
-    }
-    // O vídeo auxiliar fica vivo: no Windows, pará-lo encerra o áudio do mesmo loopback.
-    audioAnchor = loopback
-    return track
-  } catch (error) {
-    console.warn('Loopback de áudio do sistema falhou.', error)
-    audioFailure = await audioFailureMessage()
-    return null
-  }
-}
-
-async function openScreenWithAudio(settings: CaptureSettings): Promise<MediaStream | null> {
-  await prepare(settings, true, false)
-  try {
-    return await openDisplay(settings, false, true)
-  } catch (error) {
-    if (!isAudioSourceError(error)) throw error
-    console.warn('Áudio do sistema junto com a tela falhou.', error)
-    audioFailure = await audioFailureMessage()
-    return null
-  }
-}
-
 async function attachInputDevice(stream: MediaStream, deviceId: string): Promise<void> {
   const audio = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -125,43 +89,34 @@ async function attachInputDevice(stream: MediaStream, deviceId: string): Promise
   stream.addTrack(track)
 }
 
-async function attachAppAudio(settings: CaptureSettings, stream: MediaStream): Promise<MediaStream> {
-  if (settings.sourceId.startsWith('window:')) {
-    const processTrack = await attachProcessAudio(settings.sourceId)
-    if (processTrack) {
-      stream.addTrack(processTrack)
-      return stream
-    }
-  }
-  if (settings.sourceId.startsWith('screen:')) {
-    const combined = await openScreenWithAudio(settings)
-    if (combined && liveAudioTrack(combined)) {
-      stream.getTracks().forEach((track) => track.stop())
-      return combined
-    }
-    combined?.getTracks().forEach((track) => track.stop())
-  }
-  const audio = await takeSystemAudio(settings, true)
-  if (audio && audio.readyState === 'live') stream.addTrack(audio)
-  return stream
-}
-
 export async function captureDesktop(settings: CaptureSettings): Promise<MediaStream> {
   if (!window.electronAPI) throw new Error('A ponte do Electron não está disponível.')
 
   releaseSystemAudioAnchor()
   audioFailure = null
 
-  let stream = await openVideo(settings)
-  if (settings.audioMode === 'device') {
-    try {
-      await attachInputDevice(stream, settings.audioDeviceId)
-    } catch (error) {
-      console.warn('Dispositivo de entrada falhou.', error)
-      audioFailure = 'Não foi possível abrir o dispositivo de áudio escolhido.'
+  let stream: MediaStream
+  if (settings.audioMode === 'window' && settings.sourceId.startsWith('window:')) {
+    stream = await openVideo(settings)
+    const audio = await attachDesktopAudio(settings.sourceId)
+    if (audio && audio.readyState === 'live') stream.addTrack(audio)
+    else audioFailure = 'Não foi possível isolar o áudio dessa janela.'
+  } else if (settings.audioMode === 'system' || settings.audioMode === 'window') {
+    stream = await openVideo(settings)
+    const excludeId = settings.sourceId.startsWith('screen:') ? settings.sourceId : 'screen:0:0'
+    const audio = await attachDesktopAudio(excludeId)
+    if (audio && audio.readyState === 'live') stream.addTrack(audio)
+    else audioFailure = 'Não foi possível capturar o áudio do sistema sem o som do Concord.'
+  } else {
+    stream = await openVideo(settings)
+    if (settings.audioMode === 'device') {
+      try {
+        await attachInputDevice(stream, settings.audioDeviceId)
+      } catch (error) {
+        console.warn('Dispositivo de entrada falhou.', error)
+        audioFailure = 'Não foi possível abrir o dispositivo de áudio escolhido.'
+      }
     }
-  } else if (settings.audioMode === 'app') {
-    stream = await attachAppAudio(settings, stream)
   }
 
   const video = stream.getVideoTracks()[0]

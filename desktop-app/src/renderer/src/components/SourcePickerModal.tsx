@@ -27,7 +27,34 @@ interface SourcePickerModalProps {
   onStop?: () => void
 }
 
+type AudioChoice = 'none' | 'window' | 'system' | 'device'
+
 const fieldClass = 'h-10 w-full rounded-md bg-app px-2 text-sm text-ink ring-1 ring-line'
+const STORAGE_RESOLUTION = 'screenshare.capture.resolution'
+const STORAGE_FPS = 'screenshare.capture.fps'
+const STORAGE_BITRATE = 'screenshare.capture.bitrate'
+
+function readCaptureStorage(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function storedResolution(): ResolutionPreset {
+  const value = readCaptureStorage(STORAGE_RESOLUTION)
+  return value === '720p' || value === '1080p' || value === '1440p' || value === 'native' ? value : '1080p'
+}
+
+function storedFps(): 30 | 60 {
+  return readCaptureStorage(STORAGE_FPS) === '30' ? 30 : 60
+}
+
+function storedBitrate(): number {
+  const value = Number(readCaptureStorage(STORAGE_BITRATE))
+  return VIDEO_BITRATES.some((item) => item.value === value) ? value : 12_000_000
+}
 
 export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, onStop }: SourcePickerModalProps) {
   const [tab, setTab] = useState<SourceTab>('window')
@@ -35,12 +62,12 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [audioMode, setAudioMode] = useState<AudioSourceMode>('app')
+  const [audioChoice, setAudioChoice] = useState<AudioChoice>('window')
   const [audioDeviceId, setAudioDeviceId] = useState('')
   const [devices, setDevices] = useState<Array<{ deviceId: string; label: string }>>([])
-  const [resolution, setResolution] = useState<ResolutionPreset>('1080p')
-  const [fps, setFps] = useState<30 | 60>(60)
-  const [maxBitrate, setMaxBitrate] = useState<number>(12_000_000)
+  const [resolution, setResolution] = useState<ResolutionPreset>(storedResolution)
+  const [fps, setFps] = useState<30 | 60>(storedFps)
+  const [maxBitrate, setMaxBitrate] = useState<number>(storedBitrate)
   const [audioBitrate, setAudioBitrate] = useState<number>(256_000)
   const [contentHint, setContentHint] = useState<ContentHint>('motion')
 
@@ -72,7 +99,14 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
   }, [onClose])
 
   useEffect(() => {
-    if (audioMode !== 'device') return
+    setAudioChoice((current) => {
+      if (current === 'none' || current === 'device') return current
+      return tab === 'screen' ? 'system' : 'window'
+    })
+  }, [tab])
+
+  useEffect(() => {
+    if (audioChoice !== 'device') return
     let cancelled = false
     void (async () => {
       try {
@@ -99,7 +133,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
     return () => {
       cancelled = true
     }
-  }, [audioMode])
+  }, [audioChoice])
 
   const visible = sources.filter((source) =>
     tab === 'screen' ? source.id.startsWith('screen:') : source.id.startsWith('window:')
@@ -108,6 +142,15 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
 
   function confirm(): void {
     if (!selected) return
+    let audioMode: AudioSourceMode = audioChoice
+    if (audioMode === 'window' && selected.id.startsWith('screen:')) audioMode = 'system'
+    try {
+      localStorage.setItem(STORAGE_RESOLUTION, resolution)
+      localStorage.setItem(STORAGE_FPS, String(fps))
+      localStorage.setItem(STORAGE_BITRATE, String(maxBitrate))
+    } catch {
+      // A transmissão segue mesmo se as preferências não puderem ser salvas.
+    }
     onConfirm({
       sourceId: selected.id,
       sourceName: selected.name,
@@ -217,16 +260,29 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
           <label className="block text-xs text-muted sm:col-span-2">
             Áudio da transmissão
             <select
-              value={audioMode}
-              onChange={(event) => setAudioMode(event.target.value as AudioSourceMode)}
+              value={audioChoice}
+              onChange={(event) => setAudioChoice(event.target.value as AudioChoice)}
               className={`${fieldClass} mt-1`}
             >
               <option value="none">Sem áudio</option>
-              <option value="app">Áudio do aplicativo</option>
+              <option value="window" disabled={tab === 'screen'}>
+                Áudio só desta janela
+              </option>
+              <option value="system">Áudio do sistema</option>
               <option value="device">Dispositivo de entrada</option>
             </select>
+            {audioChoice === 'window' ? (
+              <span className="mt-1 block text-[11px] leading-4">
+                Só o programa da janela escolhida. No Chrome e no Edge entra o navegador inteiro, não uma aba. O som do Concord não entra.
+              </span>
+            ) : null}
+            {audioChoice === 'system' ? (
+              <span className="mt-1 block text-[11px] leading-4">
+                Tudo o que sai no alto-falante, menos o som do Concord.
+              </span>
+            ) : null}
           </label>
-          {audioMode === 'device' ? (
+          {audioChoice === 'device' ? (
             <label className="block text-xs text-muted sm:col-span-2">
               Dispositivo
               <select

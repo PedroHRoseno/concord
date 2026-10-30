@@ -2,7 +2,7 @@ export type ResolutionPreset = '720p' | '1080p' | '1440p' | 'native'
 export type ContentHint = 'motion' | 'detail'
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 export type StreamType = 'screen' | 'webcam'
-export type AudioSourceMode = 'none' | 'app' | 'device'
+export type AudioSourceMode = 'none' | 'system' | 'window' | 'device'
 
 export interface StreamMeta {
   streamId: string
