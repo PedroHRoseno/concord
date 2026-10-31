@@ -52,9 +52,15 @@ export interface ElectronBridge {
   onMaximized: (listener: (maximized: boolean) => void) => () => void
   getVersion: () => Promise<string>
   checkForUpdates: () => Promise<void>
-  downloadUpdate: () => Promise<void>
-  installUpdate: () => Promise<void>
+  startDownload: () => void
+  installUpdate: () => void
   onUpdateStatus: (listener: (status: UpdateStatus) => void) => () => void
+  onUpdateAvailable: (listener: (info: { version: string; notes: string; current: string }) => void) => () => void
+  onUpdateNotAvailable: (listener: (info: { current: string }) => void) => () => void
+  onDownloadProgress: (
+    listener: (progress: { percent: number; bytesPerSecond?: number; transferred?: number; total?: number }) => void
+  ) => () => void
+  onUpdateDownloaded: (listener: (info: { version: string }) => void) => () => void
 }
 
 export interface UpdateStatus {

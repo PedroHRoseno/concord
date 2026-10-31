@@ -70,47 +70,74 @@ export function UpdateDialog({ status, onClose }: UpdateDialogProps) {
 
         {phase === 'error' ? <p className="mt-4 text-sm text-danger">{status?.message || 'Não foi possível procurar atualizações.'}</p> : null}
 
-        {phase === 'available' || phase === 'downloading' || phase === 'ready' ? (
+        {phase === 'available' ? (
           <div className="mt-4">
-            <p className="text-sm text-ink">
-              v{status?.current || '—'} → v{status?.version || '—'}
-            </p>
+            <p className="text-sm text-ink">Nova versão disponível (v{status?.version || '—'})! Deseja baixar agora?</p>
             {status?.notes ? (
               <div className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl bg-app px-3 py-2 text-sm text-muted">{status.notes}</div>
             ) : null}
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => window.electronAPI?.startDownload?.()}
+                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-blurple text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95"
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Baixar
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-10 flex-1 rounded-lg bg-app text-sm font-semibold text-ink ring-1 ring-line transition-all duration-200 ease-out hover:bg-panel active:scale-95"
+              >
+                Depois
+              </button>
+            </div>
           </div>
         ) : null}
 
-        {phase === 'available' || phase === 'error' ? (
+        {phase === 'error' ? (
           <button
             type="button"
-            onClick={() => void (phase === 'available' ? window.electronAPI?.downloadUpdate?.() : window.electronAPI?.checkForUpdates?.())}
+            onClick={() => void window.electronAPI?.checkForUpdates?.()}
             className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-blurple text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95"
           >
-            <Download className="h-4 w-4" aria-hidden="true" />
-            {phase === 'available' ? 'Baixar Atualização Agora' : 'Tentar de novo'}
+            Tentar de novo
           </button>
         ) : null}
 
         {phase === 'downloading' ? (
           <div className="mt-4">
-            <div className="h-2 overflow-hidden rounded-full bg-app">
+            <p className="text-sm text-ink">Baixando atualização... {Math.round(percent)}%</p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-app">
               <div className="h-full rounded-full bg-blurple transition-all duration-200 ease-out" style={{ width: `${percent}%` }} />
             </div>
             <p className="mt-2 text-xs text-muted">
-              {Math.round(percent)}% · {megabytes(status?.bytesPerSecond)}/s · {megabytes(status?.transferred)} de {megabytes(status?.total)}
+              {megabytes(status?.bytesPerSecond)}/s · {megabytes(status?.transferred)} de {megabytes(status?.total)}
             </p>
           </div>
         ) : null}
 
         {phase === 'ready' ? (
-          <button
-            type="button"
-            onClick={() => void window.electronAPI?.installUpdate?.()}
-            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-live text-sm font-semibold text-white transition-all duration-200 ease-out active:scale-95"
-          >
-            Reiniciar e Instalar Atualização
-          </button>
+          <div className="mt-4">
+            <p className="text-sm text-ink">Atualização pronta! O Concord precisa ser reiniciado para aplicar.</p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => window.electronAPI?.installUpdate?.()}
+                className="h-10 rounded-lg bg-live text-sm font-semibold text-white transition-all duration-200 ease-out active:scale-95"
+              >
+                Reiniciar e Instalar Agora
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-10 rounded-lg bg-app text-sm font-semibold text-ink ring-1 ring-line transition-all duration-200 ease-out hover:bg-panel active:scale-95"
+              >
+                Mais Tarde
+              </button>
+            </div>
+          </div>
         ) : null}
 
         {status?.current && phase === 'current' ? <p className="mt-2 text-xs text-muted">Versão instalada: v{status.current}</p> : null}

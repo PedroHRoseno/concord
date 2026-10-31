@@ -30,9 +30,33 @@ export function registerUpdates(): void {
   let pendingVersion = ''
   let pendingNotes = ''
 
+  autoUpdater.autoDownload = false
+
   const send = (status: UpdateStatus): void => {
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send('update:status', status)
+      if (win.isDestroyed()) continue
+      win.webContents.send('update:status', status)
+      if (status.phase === 'available') {
+        win.webContents.send('update-available', {
+          version: status.version ?? '',
+          notes: status.notes ?? '',
+          current: status.current ?? app.getVersion()
+        })
+      }
+      if (status.phase === 'current') {
+        win.webContents.send('update-not-available', { current: status.current ?? app.getVersion() })
+      }
+      if (status.phase === 'downloading') {
+        win.webContents.send('download-progress', {
+          percent: status.percent ?? 0,
+          bytesPerSecond: status.bytesPerSecond,
+          transferred: status.transferred,
+          total: status.total
+        })
+      }
+      if (status.phase === 'ready') {
+        win.webContents.send('update-downloaded', { version: status.version ?? pendingVersion })
+      }
     }
   }
 
@@ -52,18 +76,16 @@ export function registerUpdates(): void {
       })
     }
   })
-  ipcMain.handle('update:download', async () => {
+  ipcMain.on('start-download', () => {
     if (!app.isPackaged) return
-    await autoUpdater.downloadUpdate()
+    void autoUpdater.downloadUpdate()
   })
-  ipcMain.handle('update:install', () => {
+  ipcMain.on('install-update', () => {
     if (!app.isPackaged) return
     autoUpdater.quitAndInstall()
   })
 
   if (!app.isPackaged) return
-
-  autoUpdater.autoDownload = false
   autoUpdater.on('checking-for-update', () => {
     send({ phase: 'checking', current: app.getVersion() })
   })

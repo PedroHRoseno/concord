@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Copy, Minus, Square, X } from 'lucide-react'
 import logo from '@renderer/assets/logo.png'
 import type { ConnectionStatus } from '@renderer/types'
@@ -70,20 +70,49 @@ export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarPro
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [updateOpen, setUpdateOpen] = useState(false)
-  const seenVersion = useRef<string | null>(null)
   const pending = update?.phase === 'available' || update?.phase === 'downloading' || update?.phase === 'ready'
 
   useEffect(() => {
-    const readVersion = window.electronAPI?.getVersion
+    const api = window.electronAPI
+    const readVersion = api?.getVersion
     if (readVersion) void readVersion().then(setVersion).catch(() => undefined)
-    return window.electronAPI?.onUpdateStatus?.(setUpdate)
+    const stopStatus = api?.onUpdateStatus?.((status) => {
+      if (status.phase === 'checking' || status.phase === 'error') setUpdate(status)
+    })
+    const stopAvailable = api?.onUpdateAvailable?.((info) => {
+      setUpdate({ phase: 'available', version: info.version, notes: info.notes, current: info.current })
+    })
+    const stopCurrent = api?.onUpdateNotAvailable?.((info) => {
+      setUpdate({ phase: 'current', current: info.current })
+    })
+    const stopProgress = api?.onDownloadProgress?.((progress) => {
+      setUpdate((current) => ({
+        phase: 'downloading',
+        percent: progress.percent,
+        version: current?.version,
+        notes: current?.notes,
+        current: current?.current,
+        bytesPerSecond: progress.bytesPerSecond,
+        transferred: progress.transferred,
+        total: progress.total
+      }))
+    })
+    const stopReady = api?.onUpdateDownloaded?.((info) => {
+      setUpdate((current) => ({
+        phase: 'ready',
+        version: info.version || current?.version,
+        notes: current?.notes,
+        current: current?.current
+      }))
+    })
+    return () => {
+      stopStatus?.()
+      stopAvailable?.()
+      stopCurrent?.()
+      stopProgress?.()
+      stopReady?.()
+    }
   }, [])
-
-  useEffect(() => {
-    if (update?.phase !== 'available' || !update.version || seenVersion.current === update.version) return
-    seenVersion.current = update.version
-    setUpdateOpen(true)
-  }, [update])
 
   return (
     <header className="titlebar-drag flex h-12 shrink-0 items-center border-b border-line bg-elevated">

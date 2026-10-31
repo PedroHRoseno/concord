@@ -106,12 +106,41 @@ const api = {
   },
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke('update:check'),
-  downloadUpdate: (): Promise<void> => ipcRenderer.invoke('update:download'),
-  installUpdate: (): Promise<void> => ipcRenderer.invoke('update:install'),
+  startDownload: (): void => {
+    ipcRenderer.send('start-download')
+  },
+  installUpdate: (): void => {
+    ipcRenderer.send('install-update')
+  },
   onUpdateStatus: (listener: (status: UpdateStatus) => void): (() => void) => {
     const wrapped = (_event: IpcRendererEvent, status: UpdateStatus): void => listener(status)
     ipcRenderer.on('update:status', wrapped)
     return () => ipcRenderer.removeListener('update:status', wrapped)
+  },
+  onUpdateAvailable: (listener: (info: { version: string; notes: string; current: string }) => void): (() => void) => {
+    const wrapped = (_event: IpcRendererEvent, info: { version: string; notes: string; current: string }): void => listener(info)
+    ipcRenderer.on('update-available', wrapped)
+    return () => ipcRenderer.removeListener('update-available', wrapped)
+  },
+  onUpdateNotAvailable: (listener: (info: { current: string }) => void): (() => void) => {
+    const wrapped = (_event: IpcRendererEvent, info: { current: string }): void => listener(info)
+    ipcRenderer.on('update-not-available', wrapped)
+    return () => ipcRenderer.removeListener('update-not-available', wrapped)
+  },
+  onDownloadProgress: (
+    listener: (progress: { percent: number; bytesPerSecond?: number; transferred?: number; total?: number }) => void
+  ): (() => void) => {
+    const wrapped = (
+      _event: IpcRendererEvent,
+      progress: { percent: number; bytesPerSecond?: number; transferred?: number; total?: number }
+    ): void => listener(progress)
+    ipcRenderer.on('download-progress', wrapped)
+    return () => ipcRenderer.removeListener('download-progress', wrapped)
+  },
+  onUpdateDownloaded: (listener: (info: { version: string }) => void): (() => void) => {
+    const wrapped = (_event: IpcRendererEvent, info: { version: string }): void => listener(info)
+    ipcRenderer.on('update-downloaded', wrapped)
+    return () => ipcRenderer.removeListener('update-downloaded', wrapped)
   }
 }
 
