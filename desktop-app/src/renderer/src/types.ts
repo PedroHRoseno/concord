@@ -19,11 +19,20 @@ export interface StreamMeta {
 export interface WatcherInfo {
   peerId: string
   displayName: string
+  avatarDataUrl?: string
+  accentColor?: string
+}
+
+export interface PublicProfile {
+  avatarDataUrl: string
+  accentColor: string
+  customStatus: string
 }
 
 export interface PeerInfo {
   peerId: string
   displayName: string
+  profile?: PublicProfile
   streams: StreamMeta[]
   watchers: Array<{ streamId: string; peerId: string; displayName: string }>
 }
@@ -38,7 +47,8 @@ export interface SignalPayload {
 }
 
 export type ClientMessage =
-  | { type: 'join'; roomId: string; peerId: string; displayName: string }
+  | { type: 'join'; roomId: string; peerId: string; displayName: string; profile?: PublicProfile }
+  | { type: 'update-profile'; displayName: string; profile: PublicProfile }
   | { type: 'leave' }
   | { type: 'signal'; to: string; payload: SignalPayload }
   | { type: 'stream-meta'; streamId: string; meta: StreamMeta | null }
@@ -50,6 +60,7 @@ export type ServerMessage =
   | { type: 'joined'; peerId: string; peers: PeerInfo[] }
   | { type: 'peer-joined'; peer: PeerInfo }
   | { type: 'peer-left'; peerId: string }
+  | { type: 'profile-updated'; peerId: string; displayName: string; profile: PublicProfile }
   | { type: 'signal'; from: string; payload: SignalPayload }
   | { type: 'stream-meta'; peerId: string; streamId: string; meta: StreamMeta | null }
   | { type: 'watch'; streamId: string; viewerId: string }
@@ -89,6 +100,7 @@ export interface RemoteStreamView {
 export interface PeerView {
   peerId: string
   displayName: string
+  profile: PublicProfile
   streams: RemoteStreamView[]
 }
 
@@ -100,11 +112,16 @@ export interface LocalPublication {
   pc: RTCPeerConnection | null
 }
 
+export interface UserProfile extends PublicProfile {
+  displayName: string
+}
+
 export interface LobbyInput {
   displayName: string
   roomId: string
   signalingUrl: string
   turn: TurnCredentials
+  profile: UserProfile
 }
 
 export interface WebcamSettings {

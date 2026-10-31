@@ -1,4 +1,5 @@
 import { buildIceServers } from '@renderer/lib/ice'
+import { publicProfileOf, sanitizeProfile } from '@renderer/lib/profile'
 import {
   playStreamStartSound,
   playStreamStopSound,
@@ -20,6 +21,7 @@ import {
   type StreamMeta,
   type StreamType,
   type TurnCredentials,
+  type PublicProfile,
   type WatcherInfo
 } from '@renderer/types'
 
@@ -39,6 +41,7 @@ interface SessionOptions {
   roomId: string
   peerId: string
   displayName: string
+  profile: PublicProfile
   turn: TurnCredentials | null
   events: MeshEvents
 }
@@ -46,6 +49,7 @@ interface SessionOptions {
 interface RemotePeer {
   peerId: string
   displayName: string
+  profile: PublicProfile
   streams: Map<string, StreamMeta>
   watchers: Map<string, WatcherInfo[]>
 }
@@ -93,12 +97,14 @@ export class MeshSession {
   private readonly events: MeshEvents
   private readonly peerId: string
   private readonly roomId: string
-  private readonly displayName: string
+  private displayName: string
+  private profile: PublicProfile
   private peers = new Map<string, RemotePeer>()
   private links = new Map<string, PeerLink>()
   private remoteStreams = new Map<string, MediaStream>()
   private earlyIce = new Map<string, RTCIceCandidateInit[]>()
   private watching = new Set<string>()
+  private hiddenWebcams = new Set<string>()
   private watchMemory = new Map<string, number>()
   private hostJobs = new Map<string, Promise<void>>()
   private locals = new Map<string, LocalPub>()
@@ -112,6 +118,7 @@ export class MeshSession {
     this.peerId = options.peerId
     this.roomId = options.roomId
     this.displayName = options.displayName
+    this.profile = options.profile
     this.iceServers = buildIceServers(options.turn)
     this.socket = new SignalingClient(options.url)
     this.socket.onStatus = (status) => {
@@ -123,7 +130,8 @@ export class MeshSession {
         type: 'join',
         roomId: this.roomId,
         peerId: this.peerId,
-        displayName: this.displayName
+        displayName: this.displayName,
+        profile: this.profile
       })
     }
     this.socket.onClose = () => {
@@ -166,10 +174,17 @@ export class MeshSession {
     this.emit()
   }
 
+  updateProfile(displayName: string, profile: PublicProfile): void {
+    this.displayName = displayName
+    this.profile = profile
+    this.socket.send({ type: 'update-profile', displayName, profile })
+  }
+
   watch(streamId: string): void {
     if (streamId.startsWith(`${this.peerId}:`)) return
     const owner = this.ownerOf(streamId)
     if (!owner?.streams.has(streamId)) return
+    this.hiddenWebcams.delete(streamId)
     this.watchMemory.delete(streamId)
     this.watching.add(streamId)
     this.socket.send({ type: 'watch', streamId })
@@ -177,6 +192,7 @@ export class MeshSession {
   }
 
   unwatch(streamId: string): void {
+    if (streamId.endsWith(':webcam')) this.hiddenWebcams.add(streamId)
     this.watching.delete(streamId)
     this.watchMemory.delete(streamId)
     this.socket.send({ type: 'unwatch', streamId })
@@ -250,6 +266,7 @@ export class MeshSession {
         for (const streamId of this.watching) {
           if (this.ownerOf(streamId)?.streams.has(streamId)) this.socket.send({ type: 'watch', streamId })
         }
+        this.subscribeVisibleWebcams()
         this.emit()
         return
       case 'peer-joined':
@@ -258,7 +275,10 @@ export class MeshSession {
           if (message.peer.streams.length > 0) playStreamStartSound()
         }
         this.peers.set(message.peer.peerId, this.toRemote(message.peer))
-        for (const meta of message.peer.streams) this.maybeRewatch(meta.streamId)
+        for (const meta of message.peer.streams) {
+          this.maybeRewatch(meta.streamId)
+          this.considerWebcam(meta)
+        }
         this.emit()
         return
       case 'peer-left':
@@ -276,6 +296,9 @@ export class MeshSession {
           this.emitLocals()
           this.emit()
         })
+        return
+      case 'profile-updated':
+        this.applyProfile(message.peerId, message.displayName, message.profile)
         return
       case 'watcher-joined':
         this.addWatcher(message.streamId, message.broadcasterId, message.watcher)
@@ -296,12 +319,42 @@ export class MeshSession {
     }
   }
 
-  private toRemote(peer: { peerId: string; displayName: string; streams: StreamMeta[]; watchers: Array<{ streamId: string; peerId: string; displayName: string }> }): RemotePeer {
+  private toRemote(peer: { peerId: string; displayName: string; profile?: PublicProfile; streams: StreamMeta[]; watchers: Array<{ streamId: string; peerId: string; displayName: string }> }): RemotePeer {
     return {
       peerId: peer.peerId,
       displayName: peer.displayName,
+      profile: publicProfileOf(sanitizeProfile(peer.profile, peer.displayName)),
       streams: new Map(peer.streams.map((meta) => [meta.streamId, meta])),
       watchers: groupWatchers(peer.watchers)
+    }
+  }
+
+  private subscribeVisibleWebcams(): void {
+    for (const peer of this.peers.values()) {
+      for (const meta of peer.streams.values()) this.considerWebcam(meta)
+    }
+  }
+
+  private considerWebcam(meta: StreamMeta): void {
+    if (meta.streamType !== 'webcam' || this.hiddenWebcams.has(meta.streamId) || this.watching.has(meta.streamId)) return
+    this.watch(meta.streamId)
+  }
+
+  private applyProfile(peerId: string, displayName: string, profile: PublicProfile): void {
+    if (peerId === this.peerId) return
+    const peer = this.peers.get(peerId)
+    if (!peer) return
+    peer.displayName = displayName.trim().slice(0, 32) || peer.displayName
+    peer.profile = publicProfileOf(sanitizeProfile(profile, peer.displayName))
+    this.emit()
+  }
+
+  private presentWatcher(watcher: WatcherInfo): WatcherInfo {
+    const peer = this.peers.get(watcher.peerId)
+    return {
+      ...watcher,
+      avatarDataUrl: peer?.profile.avatarDataUrl ?? watcher.avatarDataUrl ?? '',
+      accentColor: peer?.profile.accentColor ?? watcher.accentColor ?? '#5865F2'
     }
   }
 
@@ -339,6 +392,7 @@ export class MeshSession {
       const had = peer.streams.has(streamId)
       peer.streams.set(streamId, meta)
       if (!had) playStreamStartSound()
+      this.considerWebcam(meta)
       this.maybeRewatch(streamId)
     }
     this.emit()
@@ -728,7 +782,7 @@ export class MeshSession {
       streamId: pub.streamId,
       meta: toStreamMeta(pub.settings, pub.streamId, pub.streamType),
       media: pub.stream,
-      watchers: this.localWatchers.get(pub.streamId) ?? [],
+      watchers: (this.localWatchers.get(pub.streamId) ?? []).map((watcher) => this.presentWatcher(watcher)),
       pc: this.hostPc(pub.streamId)
     }))
     this.events.onLocals(publications)
@@ -739,13 +793,14 @@ export class MeshSession {
     const peers: PeerView[] = [...this.peers.values()].map((peer) => ({
       peerId: peer.peerId,
       displayName: peer.displayName,
+      profile: peer.profile,
       streams: [...peer.streams.values()].map((meta) => ({
         streamId: meta.streamId,
         meta,
         media: this.remoteStreams.get(meta.streamId) ?? null,
         watching: this.watching.has(meta.streamId),
         pc: this.links.get(linkKey(meta.streamId, this.peerId))?.pc ?? null,
-        watchers: peer.watchers.get(meta.streamId) ?? []
+        watchers: (peer.watchers.get(meta.streamId) ?? []).map((watcher) => this.presentWatcher(watcher))
       }))
     }))
     this.events.onSnapshot({ peers })

@@ -75,11 +75,14 @@ wss.on('connection', (socket) => {
           return
         }
         {
-          const result = hub.join(socket, message.roomId, message.peerId, message.displayName)
+          const result = hub.join(socket, message.roomId, message.peerId, message.displayName, message.profile)
           if (!result.ok) {
             socket.send(JSON.stringify({ type: 'error', message: result.error }))
           }
         }
+        return
+      case 'update-profile':
+        hub.updateProfile(socket, message.displayName, message.profile)
         return
       case 'leave':
         hub.leave(socket)

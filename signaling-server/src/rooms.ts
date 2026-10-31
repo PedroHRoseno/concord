@@ -3,7 +3,9 @@ import {
   isSignalPayload,
   isStreamId,
   isStreamMeta,
+  sanitizeProfile,
   type PeerInfo,
+  type PublicProfile,
   type ServerMessage,
   type SignalPayload,
   type StreamMeta,
@@ -14,6 +16,7 @@ export interface Member {
   socket: WebSocket
   peerId: string
   displayName: string
+  profile: PublicProfile
   roomId: string
   streams: Map<string, StreamMeta>
   watchers: Map<string, Set<string>>
@@ -35,7 +38,8 @@ export class RoomHub {
     socket: WebSocket,
     roomId: string,
     peerId: string,
-    displayName: string
+    displayName: string,
+    profile: unknown
   ): { ok: true } | { ok: false; error: string } {
     if (!ROOM_RE.test(roomId)) {
       return { ok: false, error: 'ID da sala inválido. Use letras, números, _ e - (até 64).' }
@@ -70,6 +74,7 @@ export class RoomHub {
       socket,
       peerId,
       displayName: name,
+      profile: sanitizeProfile(profile),
       roomId,
       streams: new Map(),
       watchers: new Map(),
@@ -120,6 +125,22 @@ export class RoomHub {
     if (!member.watchers.has(streamId)) member.watchers.set(streamId, new Set())
     this.broadcast(member.roomId, { type: 'stream-meta', peerId: member.peerId, streamId, meta })
     console.log(`[${member.roomId}] ${member.displayName} transmitindo ${meta.streamType}`)
+  }
+
+  updateProfile(socket: WebSocket, displayName: unknown, profile: unknown): void {
+    const member = this.require(socket)
+    if (!member) return
+    if (typeof displayName === 'string') {
+      const name = displayName.trim()
+      if (name.length >= 1 && name.length <= 32) member.displayName = name
+    }
+    member.profile = sanitizeProfile(profile)
+    this.broadcast(member.roomId, {
+      type: 'profile-updated',
+      peerId: member.peerId,
+      displayName: member.displayName,
+      profile: member.profile
+    })
   }
 
   signal(socket: WebSocket, to: string, payload: unknown): void {
@@ -227,6 +248,7 @@ export class RoomHub {
     return {
       peerId: member.peerId,
       displayName: member.displayName,
+      profile: member.profile,
       streams: [...member.streams.values()],
       watchers
     }

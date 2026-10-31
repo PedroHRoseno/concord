@@ -8,6 +8,7 @@ import {
   systemAudioWarning
 } from '@renderer/lib/capture'
 import { normalizeTurn } from '@renderer/lib/ice'
+import { publicProfileOf, readProfile, writeProfile } from '@renderer/lib/profile'
 import { MeshSession } from '@renderer/lib/webrtc'
 import type {
   CaptureSettings,
@@ -15,6 +16,7 @@ import type {
   LobbyInput,
   LocalPublication,
   PeerView,
+  UserProfile,
   WebcamSettings
 } from '@renderer/types'
 
@@ -71,6 +73,7 @@ export function useRoom() {
   const [peers, setPeers] = useState<PeerView[]>([])
   const [locals, setLocals] = useState<LocalPublication[]>([])
   const [self, setSelf] = useState<SelfIdentity | null>(null)
+  const [profile, setProfile] = useState<UserProfile>(() => readProfile())
   const [error, setError] = useState<string | null>(null)
   const [audioWarning, setAudioWarning] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -92,13 +95,15 @@ export function useRoom() {
     }
     sessionRef.current?.dispose()
     const peerId = createPeerId()
-    const displayName = input.displayName.trim()
+    const saved = writeProfile({ ...input.profile, displayName: input.displayName.trim() })
+    const displayName = saved.displayName
     const roomId = input.roomId.trim()
     const session = new MeshSession({
       url: input.signalingUrl.trim(),
       roomId,
       peerId,
       displayName,
+      profile: publicProfileOf(saved),
       turn: normalizeTurn(input.turn),
       events: {
         onStatus: setStatus,
@@ -114,6 +119,7 @@ export function useRoom() {
       }
     })
     sessionRef.current = session
+    setProfile(saved)
     setSelf({ peerId, displayName, roomId })
     setPeers([])
     setLocals([])
@@ -199,6 +205,13 @@ export function useRoom() {
     sessionRef.current?.unwatch(streamId)
   }, [])
 
+  const updateProfile = useCallback((next: UserProfile) => {
+    const saved = writeProfile(next)
+    setProfile(saved)
+    setSelf((current) => (current ? { ...current, displayName: saved.displayName } : current))
+    sessionRef.current?.updateProfile(saved.displayName, publicProfileOf(saved))
+  }, [])
+
   const dismissError = useCallback(() => setError(null), [])
 
   const screenLive = locals.some((item) => item.meta.streamType === 'screen')
@@ -210,6 +223,7 @@ export function useRoom() {
     peers,
     locals,
     self,
+    profile,
     error,
     audioWarning,
     audioRoute,
@@ -224,6 +238,7 @@ export function useRoom() {
     stopShare,
     watch,
     unwatch,
+    updateProfile,
     dismissError
   }
 }

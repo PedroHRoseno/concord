@@ -1,20 +1,24 @@
 import { Monitor, Video } from 'lucide-react'
-import type { LocalPublication, PeerView, StreamMeta } from '@renderer/types'
+import { Avatar } from '@renderer/components/Avatar'
+import type { LocalPublication, PeerView, PublicProfile, StreamMeta, UserProfile } from '@renderer/types'
 
 interface Person {
   peerId: string
   name: string
   self: boolean
+  profile: PublicProfile
   streams: Array<{ meta: StreamMeta; watching: boolean }>
 }
 
 interface MemberListProps {
   selfName: string
   selfId: string
+  selfProfile: UserProfile
   locals: LocalPublication[]
   peers: PeerView[]
   onWatch: (streamId: string) => void
   onUnwatch: (streamId: string) => void
+  onEditSelf: () => void
 }
 
 function sourceLine(meta: StreamMeta): string {
@@ -28,18 +32,20 @@ function badge(meta: StreamMeta | undefined): { label: string; className: string
   return { label: 'Ao vivo', className: 'bg-live/15 text-live' }
 }
 
-export function MemberList({ selfName, selfId, locals, peers, onWatch, onUnwatch }: MemberListProps) {
+export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWatch, onUnwatch, onEditSelf }: MemberListProps) {
   const people: Person[] = [
     {
       peerId: selfId,
       name: selfName,
       self: true,
+      profile: selfProfile,
       streams: locals.map((item) => ({ meta: item.meta, watching: true }))
     },
     ...peers.map((peer) => ({
       peerId: peer.peerId,
       name: peer.displayName,
       self: false,
+      profile: peer.profile,
       streams: peer.streams.map((item) => ({ meta: item.meta, watching: item.watching }))
     }))
   ]
@@ -55,7 +61,25 @@ export function MemberList({ selfName, selfId, locals, peers, onWatch, onUnwatch
           return (
             <li key={person.peerId} className="rounded-xl bg-app px-3 py-3 transition-all duration-200 ease-out">
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate text-sm font-semibold text-ink">{person.self ? `${person.name} (você)` : person.name}</p>
+                <div className="flex min-w-0 items-center gap-2 text-left">
+                  <Avatar
+                    name={person.name}
+                    src={person.profile.avatarDataUrl}
+                    accent={person.profile.accentColor}
+                    live={Boolean(screen || webcam)}
+                    size="sm"
+                  />
+                  <span className="min-w-0">
+                    {person.self ? (
+                      <button type="button" onClick={onEditSelf} className="block max-w-full truncate text-left text-sm font-semibold text-ink" title="Editar perfil">
+                        {person.name} (você)
+                      </button>
+                    ) : (
+                      <p className="truncate text-sm font-semibold text-ink">{person.name}</p>
+                    )}
+                    {person.profile.customStatus ? <p className="truncate text-xs text-muted">{person.profile.customStatus}</p> : null}
+                  </span>
+                </div>
                 <span className="flex shrink-0 gap-1">
                   {screen ? (
                     <span className="rounded-full bg-live/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-live">Ao vivo</span>
@@ -86,7 +110,7 @@ export function MemberList({ selfName, selfId, locals, peers, onWatch, onUnwatch
                   onClick={() => (screen.watching ? onUnwatch(screen.meta.streamId) : onWatch(screen.meta.streamId))}
                   className={`mt-2 w-full rounded-lg px-2 py-1.5 text-xs font-semibold transition-all duration-200 ease-out active:scale-95 ${screen.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
                 >
-                  {screen.watching ? 'Deixar de assistir' : 'Assistir live'}
+                  {screen.watching ? 'Deixar live' : 'Assistir live'}
                 </button>
               ) : null}
               {!person.self && webcam ? (
@@ -95,7 +119,7 @@ export function MemberList({ selfName, selfId, locals, peers, onWatch, onUnwatch
                   onClick={() => (webcam.watching ? onUnwatch(webcam.meta.streamId) : onWatch(webcam.meta.streamId))}
                   className={`mt-2 w-full rounded-lg px-2 py-1.5 text-xs font-semibold transition-all duration-200 ease-out active:scale-95 ${webcam.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
                 >
-                  {webcam.watching ? 'Deixar de assistir' : 'Assistir webcam'}
+                  {webcam.watching ? 'Ocultar câmera' : 'Ver câmera'}
                 </button>
               ) : null}
             </li>

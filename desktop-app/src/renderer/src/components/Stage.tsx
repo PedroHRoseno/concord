@@ -13,9 +13,12 @@ interface Tile extends TileBox {
   z: number
 }
 
+export type CameraRail = 'bottom' | 'left' | 'right'
+
 interface StageProps {
   entries: StageEntry[]
   layout: 'grid' | 'focus'
+  cameraRail: CameraRail
   isolateAudio: boolean
   audioRoute: DesktopAudioRoute
   onWatch: (id: string) => void
@@ -39,15 +42,13 @@ const RESIZE: HandleStyles = {
 }
 
 export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
-  { entries, layout, isolateAudio, audioRoute, onWatch, onUnwatch, onLayoutChange },
+  { entries, layout, cameraRail, isolateAudio, audioRoute, onWatch, onUnwatch, onLayoutChange },
   ref
 ) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const [mixes, setMixes] = useState<Record<string, AudioMix>>({})
   const [tiles, setTiles] = useState<Record<string, Tile>>({})
   const [stamp, setStamp] = useState(0)
-  const [float, setFloat] = useState({ x: 16, y: 16 })
-  const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const tilesRef = useRef<Record<string, Tile>>({})
   const rndRefs = useRef<Record<string, Rnd | null>>({})
@@ -124,8 +125,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
         }
         for (const entry of list) {
           if (next[entry.id]) continue
-          zRef.current = Math.min(40, Math.max(10, zRef.current + 1))
-          next[entry.id] = { ...placeNew(Object.values(next), w, h), z: zRef.current }
+          next[entry.id] = { ...placeNew(Object.values(next), w, h), z: zInBand(entry.id, Object.values(next)) }
         }
         commit(next, true)
         return
@@ -140,8 +140,8 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
       const boxes = useCorner ? cornerLayout(list.map((entry) => entry.meta.streamType), w, h) : equalGrid(list.length, w, h)
       const next: Record<string, Tile> = {}
       list.forEach((entry, index) => {
-        const base = entry.meta.streamType === 'webcam' ? 30 : 10
-        next[entry.id] = { ...boxes[index], z: Math.min(40, base + index) }
+        const band = zBand(entry.meta.streamType)
+        next[entry.id] = { ...boxes[index], z: Math.min(band.max, band.min + index) }
       })
       zRef.current = Math.max(10, ...Object.values(next).map((tile) => tile.z))
       if (forced) {
@@ -154,8 +154,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     if (missing.length > 0) {
       const next = { ...tilesRef.current }
       for (const entry of missing) {
-        zRef.current = Math.min(40, Math.max(10, zRef.current + 1))
-        next[entry.id] = { ...placeNew(Object.values(next), w, h), z: zRef.current }
+        next[entry.id] = { ...placeNew(Object.values(next), w, h), z: zInBand(entry.id, Object.values(next)) }
       }
       commit(next, true)
       return
@@ -227,24 +226,39 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     })
   }
 
+  function zBand(streamType: string | undefined): { min: number; max: number } {
+    return streamType === 'webcam' ? { min: 30, max: 39 } : { min: 10, max: 19 }
+  }
+
+  function zInBand(id: string, taken: Tile[]): number {
+    const entry = entriesRef.current.find((item) => item.id === id)
+    const band = zBand(entry?.meta.streamType)
+    const used = taken.filter((tile) => tile.z >= band.min && tile.z <= band.max).map((tile) => tile.z)
+    const top = used.length > 0 ? Math.max(...used) : band.min - 1
+    return Math.min(band.max, Math.max(band.min, top + 1))
+  }
+
   function bringToFront(id: string): void {
     const tiles = tilesRef.current
     const tile = tiles[id]
     if (!tile) return
-    const top = Math.max(...Object.values(tiles).map((item) => item.z))
-    if (tile.z === top) return
-    const nextZ = Math.min(40, top + 1)
+    const entry = entriesRef.current.find((item) => item.id === id)
+    const band = zBand(entry?.meta.streamType)
+    const same = Object.entries(tiles).filter(([key]) => {
+      const other = entriesRef.current.find((item) => item.id === key)
+      return zBand(other?.meta.streamType).min === band.min
+    })
+    const top = Math.max(...same.map(([, item]) => item.z))
+    if (tile.z >= top && tile.z <= band.max) return
     const next = { ...tiles }
-    if (nextZ === top) {
-      const others = Object.entries(tiles)
-        .filter(([key]) => key !== id)
-        .sort((a, b) => a[1].z - b[1].z)
-      others.forEach(([key, value], index) => {
-        next[key] = { ...value, z: Math.min(39, 10 + index) }
-      })
-      next[id] = { ...tile, z: Math.min(40, 10 + others.length) }
+    if (top + 1 <= band.max) {
+      next[id] = { ...tile, z: top + 1 }
     } else {
-      next[id] = { ...tile, z: nextZ }
+      const others = same.filter(([key]) => key !== id).sort((a, b) => a[1].z - b[1].z)
+      others.forEach(([key, value], index) => {
+        next[key] = { ...value, z: Math.min(band.max - 1, band.min + index) }
+      })
+      next[id] = { ...tile, z: Math.min(band.max, band.min + others.length) }
     }
     zRef.current = next[id].z
     tilesRef.current = next
@@ -296,7 +310,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
         onWatch={() => onWatch(entry.id)}
         onUnwatch={() => onUnwatch(entry.id)}
         onFocus={() => {
-          setFocusedId(entry.id)
+          if (entry.meta.streamType === 'screen') setFocusedId(entry.id)
           onLayoutChange('focus')
         }}
         onExitFocus={() => {
@@ -315,52 +329,45 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     )
   }
 
-  const focused = layout === 'focus' ? (entries.find((entry) => entry.id === focusedId) ?? entries[0]) : null
-  const overlay =
-    focused && focused.meta.streamType === 'screen'
-      ? (entries.find((entry) => entry.peerId === focused.peerId && entry.meta.streamType === 'webcam') ?? null)
-      : null
-  const filmstrip = focused ? entries.filter((entry) => entry.id !== focused.id && entry.id !== overlay?.id) : []
+  const screens = entries.filter((entry) => entry.meta.streamType === 'screen')
+  const webcams = entries.filter((entry) => entry.meta.streamType === 'webcam')
+  const main = layout === 'focus' ? (screens.find((entry) => entry.id === focusedId) ?? screens[0] ?? null) : null
+  const strip = main ? [...screens.filter((entry) => entry.id !== main.id), ...webcams] : webcams
 
-  if (focused) {
-    return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="relative min-h-0 flex-1 p-3">
-          {card(focused, true, true, false)}
-          {overlay ? (
-            <div
-              className="absolute z-20 w-80 cursor-grab active:cursor-grabbing"
-              style={{ right: float.x, bottom: float.y }}
-              onPointerDown={(event) => {
-                if (event.target instanceof Element && event.target.closest('[data-hud]')) return
-                event.currentTarget.setPointerCapture(event.pointerId)
-                setDrag({ dx: event.clientX, dy: event.clientY })
-              }}
-              onPointerMove={(event) => {
-                if (!drag) return
-                setFloat((current) => ({
-                  x: Math.max(8, current.x - (event.clientX - drag.dx)),
-                  y: Math.max(8, current.y - (event.clientY - drag.dy))
-                }))
-                setDrag({ dx: event.clientX, dy: event.clientY })
-              }}
-              onPointerUp={() => setDrag(null)}
-            >
-              {card(overlay, false, false, false)}
+  if (layout === 'focus') {
+    const horizontal = cameraRail === 'bottom'
+    const rail =
+      strip.length > 0 ? (
+        <div
+          className={
+            horizontal
+              ? 'flex shrink-0 gap-3 overflow-x-auto px-3 pb-3'
+              : 'flex w-64 shrink-0 flex-col gap-3 overflow-y-auto p-3'
+          }
+        >
+          {strip.map((entry) => (
+            <div key={entry.id} className={horizontal ? 'aspect-video w-56 min-w-40 max-w-72 flex-1' : 'w-full shrink-0'}>
+              {card(entry, false, false, false)}
             </div>
-          ) : null}
+          ))}
         </div>
-        {filmstrip.length > 0 ? (
-          <div className="flex gap-3 overflow-x-auto px-3 pb-3">
-            {filmstrip.map((entry) => (
-              <div key={entry.id} className="w-72 shrink-0">
-                {card(entry, false, false, false)}
-              </div>
-            ))}
-          </div>
+      ) : null
+    const stagePane = (
+      <div className="relative min-h-0 min-w-0 flex-1 p-3">
+        {main ? (
+          card(main, true, true, false)
         ) : (
-          <div className="h-3 shrink-0" />
+          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+            Nenhuma live em foco. As câmeras ficam na faixa.
+          </div>
         )}
+      </div>
+    )
+    return (
+      <div className={`flex h-full min-h-0 overflow-hidden ${horizontal ? 'flex-col' : 'flex-row'}`}>
+        {cameraRail === 'left' ? rail : null}
+        {stagePane}
+        {cameraRail === 'left' ? null : rail}
       </div>
     )
   }

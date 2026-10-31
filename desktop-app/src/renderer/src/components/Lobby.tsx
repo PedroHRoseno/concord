@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import logo from '@renderer/assets/logo.png'
-import type { LobbyInput } from '@renderer/types'
+import { ProfileFields } from '@renderer/components/ProfileFields'
+import { readProfile, writeProfile } from '@renderer/lib/profile'
+import type { LobbyInput, UserProfile } from '@renderer/types'
 
 const STORAGE_NAME = 'screenshare.displayName'
 const STORAGE_ROOM = 'screenshare.roomId'
@@ -64,7 +66,8 @@ interface LobbyProps {
 }
 
 export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
-  const [displayName, setDisplayName] = useState(() => readStorage(STORAGE_NAME, ''))
+  const [profile, setProfile] = useState<UserProfile>(() => readProfile())
+  const [displayName, setDisplayName] = useState(() => readProfile().displayName)
   const [roomId, setRoomId] = useState(() => readStorage(STORAGE_ROOM, DEFAULT_ROOM))
   const [signalingUrl, setSignalingUrl] = useState(initialSignalingUrl)
   const [turnUrls, setTurnUrls] = useState(() => readStorage(STORAGE_TURN_URLS, ''))
@@ -80,7 +83,10 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
     void read()
       .then((name) => {
         const next = name.trim().slice(0, 32)
-        if (!cancelled && next) setDisplayName((current) => (current.trim() ? current : next))
+        if (!cancelled && next) {
+          setDisplayName((current) => (current.trim() ? current : next))
+          setProfile((current) => (current.displayName.trim() ? current : { ...current, displayName: next }))
+        }
       })
       .catch(() => undefined)
     return () => {
@@ -100,8 +106,10 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
     }
     const saved = savedSession()
     if (!saved || readStorage(STORAGE_AUTO, '1') === '0') return
+    const storedProfile = readProfile()
     onJoin({
       displayName: saved.displayName,
+      profile: { ...storedProfile, displayName: saved.displayName },
       roomId: saved.roomId,
       signalingUrl: initialSignalingUrl(),
       turn: {
@@ -115,6 +123,7 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
   function currentInput(): LobbyInput {
     return {
       displayName,
+      profile: { ...profile, displayName },
       roomId,
       signalingUrl,
       turn: { urls: turnUrls, username: turnUsername, credential: turnCredential }
@@ -122,6 +131,7 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
   }
 
   function persist(input: LobbyInput): void {
+    writeProfile({ ...input.profile, displayName: input.displayName })
     writeStorage(STORAGE_NAME, input.displayName)
     writeStorage(STORAGE_ROOM, input.roomId)
     writeStorage(STORAGE_URL, input.signalingUrl)
@@ -158,12 +168,19 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
         <input
           id="display-name"
           value={displayName}
-          onChange={(event) => setDisplayName(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value
+            setDisplayName(next)
+            setProfile((current) => ({ ...current, displayName: next }))
+          }}
           maxLength={32}
           autoFocus
           autoComplete="nickname"
           className="mt-2 h-11 w-full rounded-lg bg-app px-3 text-sm text-ink ring-1 ring-line"
         />
+        <div className="mt-4">
+          <ProfileFields profile={{ ...profile, displayName }} onChange={setProfile} />
+        </div>
 
         <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="room-id">
           ID da sala

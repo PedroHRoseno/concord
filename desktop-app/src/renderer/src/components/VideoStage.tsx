@@ -463,8 +463,8 @@ export function VideoStage({
         {onToggleWatch ? (
           <button
             type="button"
-            title="Parar de assistir"
-            aria-label="Parar de assistir"
+            title={details?.kind === 'Webcam' ? 'Ocultar câmera' : 'Deixar live'}
+            aria-label={details?.kind === 'Webcam' ? 'Ocultar câmera' : 'Deixar live'}
             onClick={onToggleWatch}
             className="rounded-md p-1.5 text-ink hover:bg-white/10"
           >

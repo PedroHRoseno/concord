@@ -19,9 +19,16 @@ export interface WatcherInfo {
   displayName: string
 }
 
+export interface PublicProfile {
+  avatarDataUrl: string
+  accentColor: string
+  customStatus: string
+}
+
 export interface PeerInfo {
   peerId: string
   displayName: string
+  profile: PublicProfile
   streams: StreamMeta[]
   watchers: Array<{ streamId: string; peerId: string; displayName: string }>
 }
@@ -48,7 +55,8 @@ export interface SignalPayload {
 }
 
 export type ClientMessage =
-  | { type: 'join'; roomId: string; peerId: string; displayName: string }
+  | { type: 'join'; roomId: string; peerId: string; displayName: string; profile?: PublicProfile }
+  | { type: 'update-profile'; displayName: string; profile: PublicProfile }
   | { type: 'leave' }
   | { type: 'signal'; to: string; payload: SignalPayload }
   | { type: 'stream-meta'; streamId: string; meta: StreamMeta | null }
@@ -60,6 +68,7 @@ export type ServerMessage =
   | { type: 'joined'; peerId: string; peers: PeerInfo[] }
   | { type: 'peer-joined'; peer: PeerInfo }
   | { type: 'peer-left'; peerId: string }
+  | { type: 'profile-updated'; peerId: string; displayName: string; profile: PublicProfile }
   | { type: 'signal'; from: string; payload: SignalPayload }
   | { type: 'stream-meta'; peerId: string; streamId: string; meta: StreamMeta | null }
   | { type: 'watch'; streamId: string; viewerId: string }
@@ -68,6 +77,22 @@ export type ServerMessage =
   | { type: 'watcher-left'; streamId: string; broadcasterId: string; peerId: string }
   | { type: 'pong' }
   | { type: 'error'; message: string }
+
+const AVATAR_LIMIT = 12_000
+const COLOR_RE = /^#[0-9a-fA-F]{6}$/
+
+export function sanitizeProfile(value: unknown): PublicProfile {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const avatar = typeof raw.avatarDataUrl === 'string' ? raw.avatarDataUrl : ''
+  const allowed = avatar.startsWith('data:image/webp;base64,') || avatar.startsWith('data:image/svg+xml')
+  const color = typeof raw.accentColor === 'string' && COLOR_RE.test(raw.accentColor) ? raw.accentColor : '#5865F2'
+  const status = typeof raw.customStatus === 'string' ? raw.customStatus.trim().slice(0, 40) : ''
+  return {
+    avatarDataUrl: allowed && avatar.length <= AVATAR_LIMIT ? avatar : '',
+    accentColor: color,
+    customStatus: status
+  }
+}
 
 const RESOLUTIONS = new Set<ResolutionPreset>(['720p', '1080p', '1440p', 'native'])
 const STREAM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:(screen|webcam)$/i

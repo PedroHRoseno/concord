@@ -1,20 +1,43 @@
 import { useEffect, useRef, useState } from 'react'
-import { Columns2, LayoutGrid, PanelRight, PanelRightClose, PictureInPicture, WandSparkles } from 'lucide-react'
+import { Columns2, LayoutGrid, PanelBottom, PanelLeft, PanelRight, PanelRightClose, PictureInPicture, WandSparkles } from 'lucide-react'
 import { ControlBar } from '@renderer/components/ControlBar'
 import { MemberList } from '@renderer/components/MemberList'
+import { ProfileSheet } from '@renderer/components/ProfileSheet'
 import { SettingsSheet } from '@renderer/components/SettingsSheet'
 import { SourcePickerModal } from '@renderer/components/SourcePickerModal'
-import { Stage, type StageHandle } from '@renderer/components/Stage'
+import { Stage, type CameraRail, type StageHandle } from '@renderer/components/Stage'
 import { type StageEntry } from '@renderer/components/StreamCard'
 import { WebcamSheet } from '@renderer/components/WebcamSheet'
 import type { RoomController } from '@renderer/hooks/useRoom'
 import type { CaptureSettings, WebcamSettings } from '@renderer/types'
 
+const CAMERA_RAIL_KEY = 'screenshare.focus.cameras'
+
+function readCameraRail(): CameraRail {
+  try {
+    const stored = localStorage.getItem(CAMERA_RAIL_KEY)
+    if (stored === 'left' || stored === 'right' || stored === 'bottom') return stored
+  } catch {
+    /* o padrão embaixo continua valendo */
+  }
+  return 'bottom'
+}
+
+function writeCameraRail(value: CameraRail): void {
+  try {
+    localStorage.setItem(CAMERA_RAIL_KEY, value)
+  } catch {
+    /* a escolha vale nesta sessão */
+  }
+}
+
 export function Room({ room }: { room: RoomController }) {
   const [picker, setPicker] = useState<'start' | 'swap' | null>(null)
   const [webcamOpen, setWebcamOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
   const [layout, setLayout] = useState<'grid' | 'focus'>('grid')
+  const [cameraRail, setCameraRail] = useState<CameraRail>(() => readCameraRail())
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const stageRef = useRef<StageHandle>(null)
   const entries: StageEntry[] = []
@@ -24,8 +47,11 @@ export function Room({ room }: { room: RoomController }) {
       entries.push({
         id: local.streamId,
         peerId: room.self.peerId,
-        name: room.self.displayName,
+        name: room.profile.displayName || room.self.displayName,
         isSelf: true,
+        avatarDataUrl: room.profile.avatarDataUrl,
+        accentColor: room.profile.accentColor,
+        customStatus: room.profile.customStatus,
         meta: local.meta,
         media: local.media,
         watching: true,
@@ -42,6 +68,9 @@ export function Room({ room }: { room: RoomController }) {
           peerId: peer.peerId,
           name: peer.displayName,
           isSelf: false,
+          avatarDataUrl: peer.profile.avatarDataUrl,
+          accentColor: peer.profile.accentColor,
+          customStatus: peer.profile.customStatus,
           meta: stream.meta,
           media: stream.media,
           watching: true,
@@ -114,6 +143,32 @@ export function Room({ room }: { room: RoomController }) {
             <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
             Foco
           </button>
+          {layout === 'focus' ? (
+            <div className="ml-1 flex gap-0.5">
+              {(
+                [
+                  ['bottom', PanelBottom, 'Câmeras embaixo'],
+                  ['left', PanelLeft, 'Câmeras à esquerda'],
+                  ['right', PanelRight, 'Câmeras à direita']
+                ] as const
+              ).map(([id, Icon, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  title={label}
+                  aria-label={label}
+                  aria-pressed={cameraRail === id}
+                  onClick={() => {
+                    setCameraRail(id)
+                    writeCameraRail(id)
+                  }}
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-md ${cameraRail === id ? 'bg-blurple text-white' : 'text-muted hover:text-ink'}`}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
         <button
@@ -164,6 +219,7 @@ export function Room({ room }: { room: RoomController }) {
                 ref={stageRef}
                 entries={entries}
                 layout={layout}
+                cameraRail={cameraRail}
                 isolateAudio={room.isolateAudio}
                 audioRoute={room.audioRoute}
                 onWatch={room.watch}
@@ -189,12 +245,14 @@ export function Room({ room }: { room: RoomController }) {
         {sidebarOpen && room.self ? (
           <div className="room-chrome contents">
           <MemberList
-            selfName={room.self.displayName}
+            selfName={room.profile.displayName || room.self.displayName}
             selfId={room.self.peerId}
+            selfProfile={room.profile}
             locals={room.locals}
             peers={room.peers}
             onWatch={room.watch}
             onUnwatch={room.unwatch}
+            onEditSelf={() => setProfileOpen(true)}
           />
           </div>
         ) : null}
@@ -202,6 +260,9 @@ export function Room({ room }: { room: RoomController }) {
       {picker ? <SourcePickerModal mode={picker} onClose={() => setPicker(null)} onConfirm={confirm} /> : null}
       {webcamOpen ? <WebcamSheet onClose={() => setWebcamOpen(false)} onConfirm={confirmWebcam} /> : null}
       {settingsOpen ? <SettingsSheet onClose={() => setSettingsOpen(false)} /> : null}
+      {profileOpen ? (
+        <ProfileSheet profile={room.profile} onClose={() => setProfileOpen(false)} onSave={room.updateProfile} />
+      ) : null}
     </div>
   )
 }

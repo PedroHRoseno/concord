@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Eye, GripHorizontal } from 'lucide-react'
+import { Avatar } from '@renderer/components/Avatar'
 import type { StreamMeta, WatcherInfo } from '@renderer/types'
 import { formatBitrateCap } from '@renderer/types'
 import { VideoStage, type StreamDetails } from '@renderer/components/VideoStage'
@@ -9,6 +10,9 @@ export interface StageEntry {
   id: string
   name: string
   isSelf: boolean
+  avatarDataUrl: string
+  accentColor: string
+  customStatus: string
   meta: StreamMeta
   media: MediaStream | null
   watching: boolean
@@ -92,7 +96,7 @@ export function StreamCard({
 
   return (
     <article
-      className={`relative overflow-hidden rounded-xl bg-black ring-1 ring-white/10 ${fill ? 'h-full w-full' : 'aspect-video w-full'}`}
+      className={`relative rounded-xl bg-black ring-1 ring-white/10 ${fill ? 'h-full w-full' : 'aspect-video w-full'}`}
       onPointerEnter={reveal}
       onPointerMove={reveal}
       onPointerDown={reveal}
@@ -102,7 +106,7 @@ export function StreamCard({
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false)
       }}
     >
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 overflow-hidden rounded-xl">
         {showVideo && entry.media ? (
           <VideoStage
             media={entry.media}
@@ -133,6 +137,7 @@ export function StreamCard({
       >
         <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 shadow-md backdrop-blur-md">
           <GripHorizontal className="h-4 w-4 shrink-0 text-white/80" aria-hidden="true" />
+          <Avatar name={entry.name} src={entry.avatarDataUrl} accent={entry.accentColor} live size="sm" />
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{label}</h2>
         </span>
         <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-live shadow-md backdrop-blur-md">
@@ -140,11 +145,21 @@ export function StreamCard({
           Ao vivo
         </span>
         <span
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 text-xs text-white shadow-md backdrop-blur-md"
+          className="group relative inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 text-xs text-white shadow-md backdrop-blur-md"
           title={entry.watchers.length === 0 ? 'Ninguém assistindo' : watcherNames}
         >
           <Eye className="h-3.5 w-3.5" aria-hidden="true" />
           {entry.watchers.length}
+          {entry.watchers.length > 0 ? (
+            <span className="pointer-events-none absolute right-0 top-full z-40 mt-1 hidden w-52 rounded-lg border border-white/10 bg-zinc-950/95 p-2 text-left shadow-md group-hover:block">
+              {entry.watchers.map((watcher) => (
+                <span key={watcher.peerId} className="flex items-center gap-2 py-1">
+                  <Avatar name={watcher.displayName} src={watcher.avatarDataUrl} accent={watcher.accentColor} size="sm" />
+                  <span className="truncate text-xs text-white">{watcher.displayName}</span>
+                </span>
+              ))}
+            </span>
+          ) : null}
         </span>
       </div>
     </article>
