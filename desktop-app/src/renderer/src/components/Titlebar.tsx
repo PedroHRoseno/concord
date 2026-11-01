@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Copy, Minus, Square, X } from 'lucide-react'
+import { Copy, Minus, RefreshCw, Square, X } from 'lucide-react'
 import logo from '@renderer/assets/logo.png'
 import type { ConnectionStatus } from '@renderer/types'
 import { UpdateDialog, type UpdateStatus } from '@renderer/components/UpdateDialog'
@@ -132,10 +132,22 @@ export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarPro
               setUpdateOpen(true)
               if (!pending) void window.electronAPI?.checkForUpdates?.()
             }}
-            className="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-ink"
+            title={pending ? 'Há uma atualização do Concord' : 'Procurar uma nova versão do Concord'}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-all duration-200 active:scale-95 ${
+              pending
+                ? 'border-live/60 bg-live/15 text-ink hover:bg-live/25'
+                : 'border-white/10 bg-white/5 text-muted hover:border-white/20 hover:bg-white/10 hover:text-ink'
+            }`}
           >
-            {pending ? <span className="h-2 w-2 animate-pulse rounded-full bg-live" aria-hidden="true" /> : null}
-            Verificar atualizações
+            {pending ? (
+              <span className="relative flex h-2 w-2" aria-hidden="true">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-live opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-live" />
+              </span>
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
+            {update?.phase === 'ready' ? 'Reiniciar para atualizar' : update?.phase === 'downloading' ? 'Baixando…' : pending ? 'Atualização disponível' : 'Verificar atualizações'}
           </button>
         ) : null}
         {updateOpen ? <UpdateDialog status={update} onClose={() => setUpdateOpen(false)} /> : null}

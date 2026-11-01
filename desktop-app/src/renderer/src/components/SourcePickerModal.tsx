@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AppWindow, Globe, Monitor, RefreshCw, X } from 'lucide-react'
+import { AppWindow, HelpCircle, Monitor, RefreshCw, Search, X } from 'lucide-react'
 import {
   AUDIO_BITRATES,
   RESOLUTION_OPTIONS,
@@ -11,7 +11,7 @@ import {
   type ResolutionPreset
 } from '@renderer/types'
 
-type SourceTab = 'window' | 'screen' | 'browser'
+type SourceTab = 'window' | 'screen'
 
 interface DesktopSource {
   id: string
@@ -71,25 +71,61 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
   const [maxBitrate, setMaxBitrate] = useState<number>(storedBitrate)
   const [audioBitrate, setAudioBitrate] = useState<number>(256_000)
   const [contentHint, setContentHint] = useState<ContentHint>('motion')
+  const [query, setQuery] = useState('')
+  const [helpOpen, setHelpOpen] = useState(false)
+  const [hiddenWindows, setHiddenWindows] = useState<Array<{ process: string; title: string }> | null>(null)
+  const signatureRef = useRef('')
+  const helpOpenRef = useRef(false)
 
-  async function loadSources(): Promise<void> {
-    setLoading(true)
+  async function loadHidden(): Promise<void> {
+    try {
+      setHiddenWindows((await window.electronAPI?.getHiddenWindows()) ?? [])
+    } catch {
+      setHiddenWindows([])
+    }
+  }
+
+  async function loadSources(silent = false): Promise<void> {
+    if (!silent) setLoading(true)
     setLoadError(null)
     try {
       if (!window.electronAPI) throw new Error('A ponte do Electron não está disponível.')
       const next = await window.electronAPI.getDesktopSources()
+      signatureRef.current = next.map((source) => `${source.id}|${source.name}`).join('\n')
       setSources(next)
       setSelectedId((current) => (current && next.some((source) => source.id === current) ? current : null))
+      if (helpOpenRef.current) void loadHidden()
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Não foi possível listar as telas.')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
+  // A lista nasce ao abrir o modal e se mantém atualizada: janelas abertas ou fechadas depois aparecem sozinhas.
   useEffect(() => {
     void loadSources()
+    const refreshIfChanged = async (): Promise<void> => {
+      try {
+        const signature = await window.electronAPI?.getSourcesSignature()
+        if (signature !== undefined && signature !== signatureRef.current) await loadSources(true)
+      } catch {
+        // Próxima rodada tenta de novo.
+      }
+    }
+    const timer = window.setInterval(() => void refreshIfChanged(), 3000)
+    const onFocus = (): void => void loadSources(true)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
+
+  useEffect(() => {
+    helpOpenRef.current = helpOpen
+    if (helpOpen) void loadHidden()
+  }, [helpOpen])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -101,7 +137,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
 
   useEffect(() => {
     setAudioChoice((current) => {
-      if (tab === 'browser' || current === 'none' || current === 'device') return current
+      if (current === 'none' || current === 'device') return current
       return tab === 'screen' ? 'system' : 'window'
     })
   }, [tab])
@@ -136,9 +172,9 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
     }
   }, [audioChoice])
 
-  const visible = sources.filter((source) =>
-    tab === 'screen' ? source.id.startsWith('screen:') : source.id.startsWith('window:')
-  )
+  const needle = query.trim().toLowerCase()
+  const ofKind = sources.filter((source) => (tab === 'screen' ? source.id.startsWith('screen:') : source.id.startsWith('window:')))
+  const visible = needle ? ofKind.filter((source) => source.name.toLowerCase().includes(needle)) : ofKind
   const selected = sources.find((source) => source.id === selectedId) ?? null
 
   function confirm(): void {
@@ -148,20 +184,6 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
       localStorage.setItem(STORAGE_BITRATE, String(maxBitrate))
     } catch {
       // A transmissão segue mesmo se as preferências não puderem ser salvas.
-    }
-    if (tab === 'browser') {
-      onConfirm({
-        sourceId: 'tab:native',
-        sourceName: 'Aba do navegador',
-        audioMode: 'tab',
-        audioDeviceId: '',
-        resolution,
-        fps,
-        maxBitrate,
-        audioBitrate,
-        contentHint
-      })
-      return
     }
     if (!selected) return
     let audioMode: AudioSourceMode = audioChoice
@@ -225,17 +247,6 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
           </button>
           <button
             type="button"
-            onClick={() => {
-              setTab('browser')
-              setSelectedId(null)
-            }}
-            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm ${tab === 'browser' ? 'bg-app text-ink' : 'text-muted hover:text-ink'}`}
-          >
-            <Globe className="h-4 w-4" aria-hidden="true" />
-            Aba do navegador
-          </button>
-          <button
-            type="button"
             onClick={() => void loadSources()}
             className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted hover:bg-app hover:text-ink"
           >
@@ -245,16 +256,66 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {tab === 'browser' ? (
-            <p className="max-w-xl text-sm leading-6 text-muted">
-              Ao transmitir, o seletor do sistema abre para escolher a janela ou a aba. Marque o áudio nessa janela. Esse caminho não usa o isolamento por processo e deixa o áudio da janela e da tela como estão.
+            <div className="mb-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <label className="relative block flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder={tab === 'screen' ? 'Buscar tela' : 'Buscar janela ou jogo'}
+                    aria-label="Buscar"
+                    className="h-9 w-full rounded-lg bg-app pl-9 pr-3 text-sm text-ink outline-none ring-1 ring-line focus:ring-blurple"
+                  />
+                </label>
+                <span className="shrink-0 text-xs text-muted">
+                  {needle ? `${visible.length} de ${ofKind.length}` : `${ofKind.length}`} {tab === 'screen' ? (ofKind.length === 1 ? 'tela' : 'telas') : ofKind.length === 1 ? 'janela' : 'janelas'}
+                </span>
+                {tab === 'window' ? (
+                  <button
+                    type="button"
+                    onClick={() => setHelpOpen((open) => !open)}
+                    aria-expanded={helpOpen}
+                    className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs ring-1 ring-line transition-colors hover:text-ink ${helpOpen ? 'bg-app text-ink' : 'text-muted'}`}
+                  >
+                    <HelpCircle className="h-4 w-4" aria-hidden="true" />
+                    Não achou seu jogo?
+                  </button>
+                ) : null}
+              </div>
+              {tab === 'window' && helpOpen ? (
+                <div className="rounded-xl bg-app p-3 text-xs leading-5 text-muted ring-1 ring-line">
+                  <p className="font-semibold text-ink">A lista se atualiza sozinha. Se o jogo ainda não aparece:</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5">
+                    <li>Abra o jogo até chegar à janela dele e espere alguns segundos. Janelas minimizadas ou em outra área de trabalho não podem ser capturadas: restaure a janela.</li>
+                    <li>Tela cheia exclusiva (comum em jogos antigos) costuma falhar ou ficar preta. Troque para "Janela sem bordas" nas opções gráficas ou use a aba Telas inteiras.</li>
+                    <li>Se o jogo roda como administrador, abra o Concord como administrador também.</li>
+                    <li>Launchers e anti-cheat podem esconder o título da janela. Nesses casos, compartilhe a tela inteira.</li>
+                  </ul>
+                  {hiddenWindows && hiddenWindows.length > 0 ? (
+                    <div className="mt-2 border-t border-line pt-2">
+                      <p className="font-semibold text-ink">O Windows vê estas janelas, mas elas não estão capturáveis agora:</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {hiddenWindows.slice(0, 8).map((item, index) => (
+                          <li key={`${item.process}-${index}`} className="truncate">
+                            <span className="text-ink">{item.title}</span> <span className="opacity-70">({item.process})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : hiddenWindows ? (
+                    <p className="mt-2 border-t border-line pt-2">Nenhuma outra janela com título foi encontrada no Windows.</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          {loadError ? <p className="text-sm text-danger">{loadError}</p> : null}
+          {loading && sources.length === 0 ? <p className="text-sm text-muted">Carregando miniaturas…</p> : null}
+          {!loading && visible.length === 0 ? (
+            <p className="text-sm text-muted">
+              {needle ? 'Nada com esse nome.' : tab === 'screen' ? 'Nenhuma tela encontrada.' : 'Nenhuma janela encontrada.'}
             </p>
-          ) : null}
-          {tab !== 'browser' && loadError ? <p className="text-sm text-danger">{loadError}</p> : null}
-          {tab !== 'browser' && loading && sources.length === 0 ? <p className="text-sm text-muted">Carregando miniaturas…</p> : null}
-          {tab !== 'browser' && !loading && visible.length === 0 ? (
-            <p className="text-sm text-muted">{tab === 'screen' ? 'Nenhuma tela encontrada.' : 'Nenhuma janela encontrada.'}</p>
-          ) : tab !== 'browser' ? (
+          ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
               {visible.map((source) => {
                 const active = source.id === selectedId
@@ -284,19 +345,13 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                 )
               })}
             </div>
-          ) : null}
+          )}
         </div>
 
         <footer className="grid gap-3 border-t border-line p-4 sm:grid-cols-2">
           <label className="block text-xs text-muted sm:col-span-2">
             Áudio da transmissão
-            {tab === 'browser' ? (
-              <span className="mt-1 block text-[11px] leading-4">
-                O seletor do sistema pede o áudio da aba ou da janela escolhida. O isolamento WASAPI das outras abas continua igual.
-              </span>
-            ) : (
-              <>
-              <select
+            <select
                 value={audioChoice}
                 onChange={(event) => setAudioChoice(event.target.value as AudioChoice)}
                 className={`${fieldClass} mt-1`}
@@ -318,10 +373,8 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                 Tudo o que sai no alto-falante, menos o som do Concord.
               </span>
             ) : null}
-              </>
-            )}
           </label>
-          {tab !== 'browser' && audioChoice === 'device' ? (
+          {audioChoice === 'device' ? (
             <label className="block text-xs text-muted sm:col-span-2">
               Dispositivo
               <select
@@ -413,7 +466,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
             </button>
             <button
               type="button"
-              disabled={tab !== 'browser' && !selected}
+              disabled={!selected}
               onClick={confirm}
               className="h-10 rounded-lg bg-blurple px-4 text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             >

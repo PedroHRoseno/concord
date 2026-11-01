@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 interface QuickShareSettings {
   sourceId: string
   sourceName: string
-  audioMode: 'none' | 'system' | 'window' | 'device' | 'tab'
+  audioMode: 'none' | 'system' | 'window' | 'device'
   audioDeviceId: string
   resolution: '720p' | '1080p' | '1440p' | 'native'
   fps: 30 | 60
@@ -36,14 +36,14 @@ const api = {
       displayId: string
     }>
   > => ipcRenderer.invoke('sources:list'),
+  getSourcesSignature: (): Promise<string> => ipcRenderer.invoke('sources:signature'),
+  getHiddenWindows: (): Promise<Array<{ process: string; title: string }>> => ipcRenderer.invoke('sources:hidden'),
   prepareCapture: (options: {
     sourceId: string
     shareAudio: boolean
     loopbackWithScreen?: boolean
-    nativePicker?: boolean
   }): Promise<boolean> => ipcRenderer.invoke('capture:prepare', options),
   setCaptureActive: (active: boolean): Promise<void> => ipcRenderer.invoke('capture:set-active', active),
-  restoreCapture: (): Promise<void> => ipcRenderer.invoke('capture:restore'),
   getMicrophoneAccess: (): Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'> =>
     ipcRenderer.invoke('audio:microphone-access'),
   connectAudioLoopback: (onChunk: (bytes: Uint8Array) => void): void => {

@@ -10,13 +10,12 @@ export interface CapturePrepareOptions {
   sourceId: string
   shareAudio: boolean
   loopbackWithScreen?: boolean
-  nativePicker?: boolean
 }
 
 export interface QuickShareSettings {
   sourceId: string
   sourceName: string
-  audioMode: 'none' | 'system' | 'window' | 'device' | 'tab'
+  audioMode: 'none' | 'system' | 'window' | 'device'
   audioDeviceId: string
   resolution: '720p' | '1080p' | '1440p' | 'native'
   fps: 30 | 60
@@ -27,9 +26,10 @@ export interface QuickShareSettings {
 
 export interface ElectronBridge {
   getDesktopSources: () => Promise<DesktopSourceInfo[]>
+  getSourcesSignature: () => Promise<string>
+  getHiddenWindows: () => Promise<Array<{ process: string; title: string }>>
   prepareCapture: (options: CapturePrepareOptions) => Promise<boolean>
   setCaptureActive: (active: boolean) => Promise<void>
-  restoreCapture: () => Promise<void>
   getMicrophoneAccess: () => Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'>
   connectAudioLoopback: (onChunk: (bytes: Uint8Array) => void) => void
   startAudioLoopback: (sourceId: string) => Promise<{ ok: boolean; isolated: boolean; pid: number | null }>

@@ -82,7 +82,8 @@ export function registerUpdates(): void {
   })
   ipcMain.on('install-update', () => {
     if (!app.isPackaged) return
-    autoUpdater.quitAndInstall()
+    // Instalação silenciosa (/S) e reabertura automática: sem o assistente do Windows, no estilo do Discord.
+    autoUpdater.quitAndInstall(true, true)
   })
 
   if (!app.isPackaged) return

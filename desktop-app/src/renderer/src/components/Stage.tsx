@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { Rnd, type HandleStyles } from 'react-rnd'
 import { StreamCard, type StageEntry } from '@renderer/components/StreamCard'
-import type { FloatCam, FloatMode } from '@renderer/components/VideoStage'
+import type { FloatCam } from '@renderer/components/VideoStage'
 import { clampVolume } from '@renderer/lib/playback'
 import type { DesktopAudioRoute } from '@renderer/lib/audio-loopback'
 import { clampTile, cornerLayout, equalGrid, placeNew, type TileBox } from '@renderer/lib/stage-layout'
@@ -305,7 +305,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
       .map((item) => ({ id: item.id, name: item.name, media: item.media as MediaStream }))
   }
 
-  function card(entry: StageEntry, fill: boolean, focused: boolean, canvas: boolean, floatMode: FloatMode) {
+  function card(entry: StageEntry, fill: boolean, focused: boolean, canvas: boolean) {
     const locked = isolateAudio && !entry.isSelf
     return (
       <StreamCard
@@ -316,7 +316,6 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
         volume={mixOf(entry.id).volume}
         muted={locked || mixOf(entry.id).muted}
         audioRoute={audioRoute}
-        floatMode={floatMode}
         webcams={floatsFor(entry)}
         onVolume={(volume) => updateMix(entry.id, { volume })}
         onMuted={(muted) => updateMix(entry.id, { muted })}
@@ -360,7 +359,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
         >
           {strip.map((entry) => (
             <div key={entry.id} className={horizontal ? 'aspect-video w-56 min-w-40 max-w-72 flex-1' : 'w-full shrink-0'}>
-              {card(entry, false, false, false, 'none')}
+              {card(entry, false, false, false)}
             </div>
           ))}
         </div>
@@ -368,7 +367,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     const stagePane = (
       <div className="relative min-h-0 min-w-0 flex-1 p-3">
         {main ? (
-          card(main, true, true, false, 'focus')
+          card(main, true, true, false)
         ) : (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
             Nenhuma live em foco. As câmeras ficam na faixa.
@@ -427,7 +426,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
               markGesture(false)
             }}
           >
-            <div className="h-full w-full">{card(entry, true, false, true, entry.meta.streamType === 'screen' ? 'grid' : 'none')}</div>
+            <div className="h-full w-full">{card(entry, true, false, true)}</div>
           </Rnd>
         )
       })}

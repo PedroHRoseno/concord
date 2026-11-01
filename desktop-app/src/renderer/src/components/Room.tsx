@@ -8,6 +8,7 @@ import { SourcePickerModal } from '@renderer/components/SourcePickerModal'
 import { Stage, type CameraRail, type StageHandle } from '@renderer/components/Stage'
 import { type StageEntry } from '@renderer/components/StreamCard'
 import { WebcamSheet } from '@renderer/components/WebcamSheet'
+import { IDLE_MS, useWindowActivity } from '@renderer/hooks/useIdle'
 import type { RoomController } from '@renderer/hooks/useRoom'
 import type { CaptureSettings, WebcamSettings } from '@renderer/types'
 
@@ -96,6 +97,10 @@ export function Room({ room }: { room: RoomController }) {
       stopShare?.()
     }
   }, [room.screenLive, room.publish, room.stopShare])
+
+  const modalOpen = picker !== null || webcamOpen || settingsOpen || profileOpen
+  // Só opacidade e pointer-events mudam: o espaço da dock se mantém, então o palco não é redimensionado.
+  const dockVisible = useWindowActivity(IDLE_MS, entries.length > 0 && !modalOpen)
 
   function confirm(settings: CaptureSettings): void {
     setPicker(null)
@@ -230,7 +235,10 @@ export function Room({ room }: { room: RoomController }) {
               />
             </div>
           </div>
-          <div className="room-chrome">
+          <div
+            className={`room-chrome transition-opacity duration-300 ${dockVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            aria-hidden={!dockVisible}
+          >
           <ControlBar
             sharing={room.screenLive}
             webcamLive={room.webcamLive}

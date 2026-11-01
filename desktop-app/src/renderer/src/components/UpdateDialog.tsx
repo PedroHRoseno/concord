@@ -1,6 +1,7 @@
 import { CheckCircle2, Download, Loader2, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { ReleaseNotes } from '@renderer/components/ReleaseNotes'
 
 export interface UpdateStatus {
   phase: 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'error'
@@ -74,7 +75,9 @@ export function UpdateDialog({ status, onClose }: UpdateDialogProps) {
           <div className="mt-4">
             <p className="text-sm text-ink">Nova versão disponível (v{status?.version || '—'})! Deseja baixar agora?</p>
             {status?.notes ? (
-              <div className="mt-3 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-xl bg-app px-3 py-2 text-sm text-muted">{status.notes}</div>
+              <div className="mt-3 max-h-48 overflow-y-auto rounded-xl bg-app px-3 py-2 text-sm leading-6 text-muted">
+                <ReleaseNotes notes={status.notes} />
+              </div>
             ) : null}
             <div className="mt-4 flex gap-2">
               <button
@@ -120,7 +123,7 @@ export function UpdateDialog({ status, onClose }: UpdateDialogProps) {
 
         {phase === 'ready' ? (
           <div className="mt-4">
-            <p className="text-sm text-ink">Atualização pronta! O Concord precisa ser reiniciado para aplicar.</p>
+            <p className="text-sm text-ink">Atualização pronta! O Concord fecha, atualiza em poucos segundos e abre sozinho.</p>
             <div className="mt-4 flex flex-col gap-2">
               <button
                 type="button"

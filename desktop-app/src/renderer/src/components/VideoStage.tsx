@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { createPortal } from 'react-dom'
 import {
   Activity,
   Expand,
@@ -34,8 +33,6 @@ export interface StreamDetails {
   audio: string
 }
 
-export type FloatMode = 'grid' | 'focus' | 'none'
-
 export interface FloatCam {
   id: string
   name: string
@@ -54,7 +51,6 @@ interface VideoStageProps {
   chrome: boolean
   canvas: boolean
   details: StreamDetails | null
-  floatMode: FloatMode
   webcams: FloatCam[]
   onVolume: (value: number) => void
   onMuted: (value: boolean) => void
@@ -64,10 +60,6 @@ interface VideoStageProps {
 }
 
 interface WebkitVideo extends HTMLVideoElement {
-  webkitSupportsFullscreen?: boolean
-  webkitEnterFullscreen?: () => void
-  webkitExitFullscreen?: () => void
-  webkitDisplayingFullscreen?: boolean
   webkitSetPresentationMode?: (mode: 'inline' | 'picture-in-picture') => void
   webkitPresentationMode?: string
 }
@@ -153,7 +145,6 @@ export function VideoStage({
   chrome,
   canvas,
   details,
-  floatMode,
   webcams,
   onVolume,
   onMuted,
@@ -173,18 +164,17 @@ export function VideoStage({
   const [infoOpen, setInfoOpen] = useState(false)
   const [stats, setStats] = useState<StreamStats | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
-  const [lifted, setLifted] = useState(false)
   const [pip, setPip] = useState(false)
   const [infoPinned, setInfoPinned] = useState(false)
   const [floatsOn, setFloatsOn] = useState(readFloatingWebcams)
   const cssCleanup = useRef<(() => void) | null>(null)
-  const nativeFullscreen = useRef(false)
+  /** 'native' = Fullscreen API no container; 'css' = fallback que estica o tile e põe a janela em tela cheia via IPC. */
+  const fullscreenMode = useRef<'native' | 'css' | null>(null)
   const facts = factLines(details)
   const infoVisible = infoOpen || infoPinned
   const gain = clampVolume(volume)
   const screenShare = details?.kind !== 'Webcam'
-  const showFloats =
-    floatsOn && screenShare && webcams.length > 0 && (floatMode === 'grid' || (floatMode === 'focus' && fullscreen))
+  const showFloats = floatsOn && screenShare && webcams.length > 0 && (fullscreen || canvas)
 
   useEffect(() => subscribeFloatingWebcams(setFloatsOn), [])
 
@@ -261,77 +251,51 @@ export function VideoStage({
     }
     node.addEventListener('wheel', onWheel, { passive: false })
     return () => node.removeEventListener('wheel', onWheel)
-  }, [lifted])
+  }, [])
 
   useEffect(() => {
     const onChange = () => {
       const node = containerRef.current
       if (!node) return
-      const tile = tileOf(node)
-      const native = document.fullscreenElement === tile || document.fullscreenElement === node
-      if (native) {
-        nativeFullscreen.current = true
+      if (document.fullscreenElement === node) {
+        // Um pedido nativo que demorou a responder venceu o fallback: troca para o modo nativo.
+        if (fullscreenMode.current === 'css') {
+          cssCleanup.current?.()
+          void window.electronAPI?.setWindowFullscreen?.(false)
+        }
+        fullscreenMode.current = 'native'
         setFullscreen(true)
         return
       }
-      if (!nativeFullscreen.current) return
-      nativeFullscreen.current = false
-      cssCleanup.current?.()
-      document.body.classList.remove('live-fullscreen')
+      if (fullscreenMode.current !== 'native') return
+      fullscreenMode.current = null
       setFullscreen(false)
-      setLifted(false)
-      void window.electronAPI?.setWindowFullscreen?.(false)
     }
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
 
-  useEffect(() => {
-    if (!lifted) return
-    const node = containerRef.current
-    if (!node) return
-    let cancel = false
-    document.body.classList.add('live-fullscreen')
-    void (async () => {
-      try {
-        if (document.fullscreenElement !== node) await node.requestFullscreen()
-      } catch (error) {
-        console.warn('Fullscreen da página recusado.', error)
-      }
-      if (cancel) return
-      nativeFullscreen.current = document.fullscreenElement === node
-      setFullscreen(true)
-      await window.electronAPI?.setWindowFullscreen?.(true)
-    })()
-    return () => {
-      cancel = true
-    }
-  }, [lifted])
-
-  useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-    const onEnd = () => {
-      setFullscreen(false)
-      setLifted(false)
-      document.body.classList.remove('live-fullscreen')
-    }
-    video.addEventListener('webkitendfullscreen', onEnd)
-    return () => video.removeEventListener('webkitendfullscreen', onEnd)
-  }, [media])
-
+  // O Esc já sai da tela cheia nativa; no fallback por CSS ele precisa ser tratado aqui.
   useEffect(() => {
     if (!fullscreen) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || fullscreenMode.current !== 'css') return
       event.preventDefault()
-      void leaveFullscreen(videoRef.current as WebkitVideo | null)
+      void leaveFullscreen()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [fullscreen])
 
-  useEffect(() => () => cssCleanup.current?.(), [])
+  useEffect(() => {
+    const node = containerRef.current
+    return () => {
+      cssCleanup.current?.()
+      if (fullscreenMode.current === 'css') void window.electronAPI?.setWindowFullscreen?.(false)
+      if (node && document.fullscreenElement === node) void document.exitFullscreen().catch(() => undefined)
+      fullscreenMode.current = null
+    }
+  }, [])
 
   useEffect(() => {
     const video = videoRef.current
@@ -398,13 +362,11 @@ export function VideoStage({
     }
   }
 
-  async function leaveFullscreen(video: WebkitVideo | null): Promise<void> {
-    nativeFullscreen.current = false
+  async function leaveFullscreen(): Promise<void> {
+    const mode = fullscreenMode.current
+    fullscreenMode.current = null
     releaseTile()
     setFullscreen(false)
-    setLifted(false)
-    document.body.classList.remove('live-fullscreen')
-    if (video?.webkitDisplayingFullscreen) video.webkitExitFullscreen?.()
     if (document.fullscreenElement) {
       try {
         await document.exitFullscreen()
@@ -412,40 +374,43 @@ export function VideoStage({
         /* a página já saiu da tela cheia */
       }
     }
-    await window.electronAPI?.setWindowFullscreen?.(false)
+    if (mode === 'css') await window.electronAPI?.setWindowFullscreen?.(false)
+  }
+
+  /** Fallback: estica o tile pelo CSS e põe a janela do app em tela cheia. O <video> não é remontado. */
+  async function enterCssFullscreen(node: HTMLElement): Promise<void> {
+    holdTile(tileOf(node), 'is-stage-fullscreen')
+    fullscreenMode.current = 'css'
+    setFullscreen(true)
+    await window.electronAPI?.setWindowFullscreen?.(true)
   }
 
   async function toggleFullscreen(): Promise<void> {
     const node = containerRef.current
-    const video = videoRef.current as WebkitVideo | null
-    if (!node || !video) return
+    if (!node) return
     const tile = tileOf(node)
-    const active =
-      fullscreen ||
-      lifted ||
-      tile.dataset.present === 'fullscreen' ||
-      document.fullscreenElement === tile ||
-      document.fullscreenElement === node ||
-      Boolean(video.webkitDisplayingFullscreen)
+    const active = fullscreen || tile.dataset.present === 'fullscreen' || document.fullscreenElement === node
     if (active) {
-      await leaveFullscreen(video)
+      await leaveFullscreen()
       return
     }
-    if (video.webkitSupportsFullscreen && video.webkitEnterFullscreen && document.fullscreenEnabled === false) {
-      video.webkitEnterFullscreen()
-      setFullscreen(true)
-      return
-    }
+    // A Promise de requestFullscreen() fica pendente (sem resolver nem rejeitar) quando a permissão é negada.
+    // O limite de tempo garante que o fallback sempre rode.
     try {
-      await node.requestFullscreen()
-      nativeFullscreen.current = true
-      setFullscreen(true)
-      document.body.classList.add('live-fullscreen')
-      await window.electronAPI?.setWindowFullscreen?.(true)
+      const outcome = await Promise.race([
+        node.requestFullscreen().then(() => 'ok' as const),
+        new Promise<'timeout'>((resolve) => window.setTimeout(() => resolve('timeout'), 1200))
+      ])
+      if (outcome === 'ok') {
+        fullscreenMode.current = 'native'
+        setFullscreen(true)
+        return
+      }
+      console.warn('Fullscreen nativo não respondeu, usando o fallback por CSS.')
     } catch (error) {
-      console.warn('Fullscreen no container recusado, elevando o player.', error)
-      setLifted(true)
+      console.warn('Fullscreen nativo recusado, usando o fallback por CSS.', error)
     }
+    if (document.fullscreenElement !== node) await enterCssFullscreen(node)
   }
 
   async function togglePip(): Promise<void> {
@@ -492,17 +457,20 @@ export function VideoStage({
     setTransform('translate(0px, 0px) scale(1)')
   }
 
-  const player = (
+  const cursorClass =
+    fullscreen && !chrome ? 'cursor-none' : zoomed ? 'cursor-move' : canvas && !fullscreen ? 'stage-drag cursor-grab' : ''
+
+  return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden bg-black ${lifted ? 'fixed inset-0 z-[200] h-screen w-screen' : 'h-full w-full'} ${!lifted && canvas && !zoomed ? 'stage-drag cursor-grab' : ''} ${zoomed ? 'cursor-move' : ''}`}
+      className={`relative h-full w-full overflow-hidden bg-black ${cursorClass}`}
       onDoubleClick={(event) => {
         if ((event.target as HTMLElement).closest('[data-hud]')) return
         resetZoom()
       }}
       onPointerDown={(event) => {
         if (inHud(event.target)) return
-        if (canvas && !lifted && scaleRef.current <= 1) return
+        if ((canvas || fullscreen) && scaleRef.current <= 1) return
         dragRef.current = {
           x: event.clientX - panRef.current.x,
           y: event.clientY - panRef.current.y,
@@ -522,7 +490,8 @@ export function VideoStage({
       onPointerUp={() => {
         const drag = dragRef.current
         dragRef.current = null
-        if (canvas && !lifted) return
+        // Em tela cheia, focar mudaria o layout e remontaria o player, derrubando o fullscreen.
+        if (canvas || fullscreen) return
         if (drag && !drag.moved && scaleRef.current === 1) onFocus()
       }}
     >
@@ -642,19 +611,18 @@ export function VideoStage({
             <EyeOff className="h-4 w-4" />
           </button>
         ) : null}
-        <button
-          type="button"
-          title={focused ? 'Voltar à grade' : 'Focar'}
-          aria-label={focused ? 'Voltar à grade' : 'Focar'}
-          onClick={focused ? onExitFocus : onFocus}
-          className="rounded-md p-1.5 text-ink hover:bg-white/10"
-        >
-          {focused ? <LayoutGrid className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
-        </button>
+        {fullscreen ? null : (
+          <button
+            type="button"
+            title={focused ? 'Voltar à grade' : 'Focar'}
+            aria-label={focused ? 'Voltar à grade' : 'Focar'}
+            onClick={focused ? onExitFocus : onFocus}
+            className="rounded-md p-1.5 text-ink hover:bg-white/10"
+          >
+            {focused ? <LayoutGrid className="h-4 w-4" /> : <Expand className="h-4 w-4" />}
+          </button>
+        )}
       </div>
     </div>
   )
-
-  if (lifted) return createPortal(player, document.body)
-  return player
 }

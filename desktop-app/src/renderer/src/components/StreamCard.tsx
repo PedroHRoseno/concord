@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
 import { Eye, GripHorizontal } from 'lucide-react'
 import { Avatar } from '@renderer/components/Avatar'
+import { IDLE_MS, useActivity } from '@renderer/hooks/useIdle'
 import type { StreamMeta, WatcherInfo } from '@renderer/types'
 import { formatBitrateCap } from '@renderer/types'
-import { VideoStage, type FloatCam, type FloatMode, type StreamDetails } from '@renderer/components/VideoStage'
+import { VideoStage, type FloatCam, type StreamDetails } from '@renderer/components/VideoStage'
 import type { DesktopAudioRoute } from '@renderer/lib/audio-loopback'
 
 export interface StageEntry {
@@ -31,7 +31,6 @@ interface StreamCardProps {
   volume: number
   muted: boolean
   audioRoute: DesktopAudioRoute
-  floatMode: FloatMode
   webcams: FloatCam[]
   onVolume: (value: number) => void
   onMuted: (value: boolean) => void
@@ -67,7 +66,6 @@ export function StreamCard({
   volume,
   muted,
   audioRoute,
-  floatMode,
   webcams,
   onVolume,
   onMuted,
@@ -76,32 +74,22 @@ export function StreamCard({
   onFocus,
   onExitFocus
 }: StreamCardProps) {
-  const [inside, setInside] = useState(false)
-  const [focusWithin, setFocusWithin] = useState(false)
-  const timer = useRef(0)
+  const { active: chrome, ping, hide } = useActivity(IDLE_MS, true, false)
   const showVideo = entry.isSelf ? Boolean(entry.media) : entry.watching && Boolean(entry.media)
   const connecting = !entry.isSelf && entry.watching && !entry.media
   const watcherNames = entry.watchers.map((watcher) => watcher.displayName).join(', ')
-  const chrome = inside || focusWithin
   const label = entry.isSelf ? `${entry.name} (você)` : entry.name
 
-  useEffect(() => () => window.clearTimeout(timer.current), [])
-
-  function reveal(): void {
-    setInside(true)
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setInside(false), 2500)
-  }
-
+  // O foco do teclado não prende o HUD: só movimento real do mouse, clique ou tecla o revela, e ele some após 2,5s.
   return (
     <article
       className={`relative rounded-xl bg-black ring-1 ring-white/10 ${fill ? 'h-full w-full' : 'aspect-video w-full'}`}
-      onPointerEnter={reveal}
-      onPointerMove={reveal}
-      onPointerDown={reveal}
-      onFocusCapture={() => setFocusWithin(true)}
-      onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false)
+      onPointerEnter={(event) => ping(event.clientX, event.clientY)}
+      onPointerMove={(event) => ping(event.clientX, event.clientY)}
+      onPointerDown={() => ping()}
+      onKeyDown={() => ping()}
+      onPointerLeave={(event) => {
+        if (event.pointerType === 'mouse') hide()
       }}
     >
       <div className="absolute inset-0 overflow-hidden rounded-xl">
@@ -118,7 +106,6 @@ export function StreamCard({
             chrome={chrome}
             canvas={canvas}
             details={detailsOf(entry, audioRoute)}
-            floatMode={floatMode}
             webcams={webcams}
             onVolume={onVolume}
             onMuted={onMuted}

@@ -18,9 +18,10 @@ win:
   target:
     - nsis
 nsis:
-  oneClick: false
+  # Instalação por usuário (%LOCALAPPDATA%\Programs), sem assistente e sem UAC: atualizações silenciosas como no Discord.
+  oneClick: true
   perMachine: false
-  allowToChangeInstallationDirectory: true
+  runAfterFinish: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Concord
