@@ -4,6 +4,7 @@ import { QuickShare } from '@renderer/components/QuickShare'
 import { Room } from '@renderer/components/Room'
 import { Titlebar } from '@renderer/components/Titlebar'
 import { useRoom } from '@renderer/hooks/useRoom'
+import { readDiscordClientId } from '@renderer/lib/playback'
 
 const pickerOnly = new URLSearchParams(window.location.search).get('view') === 'picker'
 
@@ -19,6 +20,24 @@ function MainApp() {
     const report = window.electronAPI?.setRoomState
     if (report) void report({ inRoom: room.phase === 'room', sharing: room.screenLive })
   }, [room.phase, room.screenLive])
+
+  useEffect(() => {
+    void window.electronAPI?.setDiscordClient?.(readDiscordClientId())
+  }, [])
+
+  useEffect(() => {
+    const publication =
+      room.phase === 'room'
+        ? (room.locals.find((item) => item.meta.streamType === 'screen') ??
+          room.locals.find((item) => item.meta.streamType === 'webcam'))
+        : undefined
+    void window.electronAPI?.setDiscordPresence?.({
+      inRoom: room.phase === 'room',
+      roomName: room.phase === 'room' ? (room.self?.roomId ?? '') : '',
+      sharing: Boolean(publication),
+      sourceName: publication?.meta.sourceName ?? ''
+    })
+  }, [room.phase, room.self, room.locals])
 
   return (
     <div className="flex h-full flex-col bg-app text-ink">

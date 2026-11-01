@@ -57,7 +57,8 @@ export function Room({ room }: { room: RoomController }) {
         watching: true,
         pc: local.pc,
         direction: 'outbound',
-        watchers: local.watchers
+        watchers: local.watchers,
+        reconnecting: local.reconnecting
       })
     }
     for (const peer of room.peers) {
@@ -76,7 +77,8 @@ export function Room({ room }: { room: RoomController }) {
           watching: true,
           pc: stream.pc,
           direction: 'inbound',
-          watchers: stream.watchers
+          watchers: stream.watchers,
+          reconnecting: stream.reconnecting
         })
       }
     }

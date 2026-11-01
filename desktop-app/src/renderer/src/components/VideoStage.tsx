@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Activity,
   Expand,
@@ -7,17 +8,38 @@ import {
   Maximize2,
   Minimize2,
   PictureInPicture2,
+  Video,
+  VideoOff,
   Volume2,
   VolumeX
 } from 'lucide-react'
 import { readStreamStats, type StreamStats } from '@renderer/lib/stats'
 import { StatsOverlay } from '@renderer/components/StatsOverlay'
+import {
+  applySink,
+  clampVolume,
+  openPlayback,
+  readFloatingWebcams,
+  readSinkId,
+  subscribeFloatingWebcams,
+  subscribeSink,
+  writeFloatingWebcams,
+  type PlaybackGraph
+} from '@renderer/lib/playback'
 
 export interface StreamDetails {
   kind: string
   sourceName: string
   quality: string
   audio: string
+}
+
+export type FloatMode = 'grid' | 'focus' | 'none'
+
+export interface FloatCam {
+  id: string
+  name: string
+  media: MediaStream
 }
 
 interface VideoStageProps {
@@ -32,6 +54,8 @@ interface VideoStageProps {
   chrome: boolean
   canvas: boolean
   details: StreamDetails | null
+  floatMode: FloatMode
+  webcams: FloatCam[]
   onVolume: (value: number) => void
   onMuted: (value: boolean) => void
   onFocus: () => void
@@ -66,6 +90,57 @@ function factLines(details: StreamDetails | null): Array<{ label: string; value:
   ]
 }
 
+function FloatingCam({ cam, origin }: { cam: FloatCam; origin: { x: number; y: number } }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [pos, setPos] = useState(origin)
+  const drag = useRef<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    video.srcObject = cam.media
+    void video.play().catch(() => undefined)
+    return () => {
+      video.pause()
+      video.srcObject = null
+    }
+  }, [cam.media])
+
+  function move(event: ReactPointerEvent<HTMLDivElement>): void {
+    const current = drag.current
+    if (!current) return
+    const parent = event.currentTarget.parentElement
+    const maxX = Math.max(8, (parent?.clientWidth ?? 160) - 168)
+    const maxY = Math.max(8, (parent?.clientHeight ?? 90) - 98)
+    setPos({
+      x: Math.min(maxX, Math.max(8, event.clientX - current.x)),
+      y: Math.min(maxY, Math.max(8, event.clientY - current.y))
+    })
+  }
+
+  return (
+    <div
+      data-hud
+      className="stage-no-drag absolute z-20 w-40 cursor-grab overflow-hidden rounded-lg bg-black shadow-lg ring-1 ring-white/20 active:cursor-grabbing"
+      style={{ left: pos.x, top: pos.y }}
+      onPointerDown={(event) => {
+        event.stopPropagation()
+        drag.current = { x: event.clientX - pos.x, y: event.clientY - pos.y }
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={move}
+      onPointerUp={() => {
+        drag.current = null
+      }}
+    >
+      <video ref={videoRef} autoPlay playsInline muted className="pointer-events-none aspect-video w-full object-cover" />
+      <span className="pointer-events-none absolute bottom-1 left-1 max-w-[9rem] truncate rounded bg-black/70 px-1.5 text-[10px] text-white">
+        {cam.name}
+      </span>
+    </div>
+  )
+}
+
 export function VideoStage({
   media,
   isSelf,
@@ -78,6 +153,8 @@ export function VideoStage({
   chrome,
   canvas,
   details,
+  floatMode,
+  webcams,
   onVolume,
   onMuted,
   onFocus,
@@ -86,6 +163,7 @@ export function VideoStage({
 }: VideoStageProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const graphRef = useRef<PlaybackGraph | null>(null)
   const scaleRef = useRef(1)
   const panRef = useRef({ x: 0, y: 0 })
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
@@ -95,12 +173,20 @@ export function VideoStage({
   const [infoOpen, setInfoOpen] = useState(false)
   const [stats, setStats] = useState<StreamStats | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
+  const [lifted, setLifted] = useState(false)
   const [pip, setPip] = useState(false)
   const [infoPinned, setInfoPinned] = useState(false)
+  const [floatsOn, setFloatsOn] = useState(readFloatingWebcams)
   const cssCleanup = useRef<(() => void) | null>(null)
   const nativeFullscreen = useRef(false)
   const facts = factLines(details)
   const infoVisible = infoOpen || infoPinned
+  const gain = clampVolume(volume)
+  const screenShare = details?.kind !== 'Webcam'
+  const showFloats =
+    floatsOn && screenShare && webcams.length > 0 && (floatMode === 'grid' || (floatMode === 'focus' && fullscreen))
+
+  useEffect(() => subscribeFloatingWebcams(setFloatsOn), [])
 
   useEffect(() => {
     const video = videoRef.current
@@ -115,10 +201,52 @@ export function VideoStage({
 
   useEffect(() => {
     const video = videoRef.current
+    graphRef.current?.close()
+    graphRef.current = null
     if (!video) return
-    video.muted = isSelf || muted
-    video.volume = muted ? 0 : volume
-  }, [isSelf, muted, volume, media])
+    if (isSelf) {
+      video.muted = true
+      video.volume = 0
+      return
+    }
+    const graph = openPlayback(media)
+    const sink = readSinkId()
+    if (!graph) {
+      video.muted = muted
+      video.volume = muted ? 0 : Math.min(1, gain)
+      void applySink(video, sink)
+      return
+    }
+    graphRef.current = graph
+    video.muted = true
+    graph.gain.gain.value = muted ? 0 : gain
+    void applySink(video, sink)
+    void applySink(graph.context, sink)
+    const stop = subscribeSink((deviceId) => {
+      void applySink(video, deviceId)
+      void applySink(graph.context, deviceId)
+    })
+    return () => {
+      stop()
+      graph.close()
+      if (graphRef.current === graph) graphRef.current = null
+    }
+  }, [media, isSelf])
+
+  useEffect(() => {
+    const video = videoRef.current
+    const graph = graphRef.current
+    if (isSelf) return
+    if (graph) {
+      if (graph.context.state === 'suspended') void graph.context.resume()
+      graph.gain.gain.value = muted ? 0 : gain
+      if (video) video.muted = true
+      return
+    }
+    if (!video) return
+    video.muted = muted
+    video.volume = muted ? 0 : Math.min(1, gain)
+  }, [muted, gain, isSelf, media])
 
   useEffect(() => {
     const node = containerRef.current
@@ -133,7 +261,7 @@ export function VideoStage({
     }
     node.addEventListener('wheel', onWheel, { passive: false })
     return () => node.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [lifted])
 
   useEffect(() => {
     const onChange = () => {
@@ -149,7 +277,9 @@ export function VideoStage({
       if (!nativeFullscreen.current) return
       nativeFullscreen.current = false
       cssCleanup.current?.()
+      document.body.classList.remove('live-fullscreen')
       setFullscreen(false)
+      setLifted(false)
       void window.electronAPI?.setWindowFullscreen?.(false)
     }
     document.addEventListener('fullscreenchange', onChange)
@@ -157,9 +287,35 @@ export function VideoStage({
   }, [])
 
   useEffect(() => {
+    if (!lifted) return
+    const node = containerRef.current
+    if (!node) return
+    let cancel = false
+    document.body.classList.add('live-fullscreen')
+    void (async () => {
+      try {
+        if (document.fullscreenElement !== node) await node.requestFullscreen()
+      } catch (error) {
+        console.warn('Fullscreen da página recusado.', error)
+      }
+      if (cancel) return
+      nativeFullscreen.current = document.fullscreenElement === node
+      setFullscreen(true)
+      await window.electronAPI?.setWindowFullscreen?.(true)
+    })()
+    return () => {
+      cancel = true
+    }
+  }, [lifted])
+
+  useEffect(() => {
     const video = videoRef.current
     if (!video) return
-    const onEnd = () => setFullscreen(false)
+    const onEnd = () => {
+      setFullscreen(false)
+      setLifted(false)
+      document.body.classList.remove('live-fullscreen')
+    }
     video.addEventListener('webkitendfullscreen', onEnd)
     return () => video.removeEventListener('webkitendfullscreen', onEnd)
   }, [media])
@@ -169,8 +325,6 @@ export function VideoStage({
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
-      const node = containerRef.current
-      if (!node) return
       void leaveFullscreen(videoRef.current as WebkitVideo | null)
     }
     document.addEventListener('keydown', onKey)
@@ -248,6 +402,8 @@ export function VideoStage({
     nativeFullscreen.current = false
     releaseTile()
     setFullscreen(false)
+    setLifted(false)
+    document.body.classList.remove('live-fullscreen')
     if (video?.webkitDisplayingFullscreen) video.webkitExitFullscreen?.()
     if (document.fullscreenElement) {
       try {
@@ -266,6 +422,7 @@ export function VideoStage({
     const tile = tileOf(node)
     const active =
       fullscreen ||
+      lifted ||
       tile.dataset.present === 'fullscreen' ||
       document.fullscreenElement === tile ||
       document.fullscreenElement === node ||
@@ -279,14 +436,16 @@ export function VideoStage({
       setFullscreen(true)
       return
     }
-    holdTile(tile, 'is-stage-fullscreen')
-    setFullscreen(true)
     try {
-      if (document.fullscreenEnabled && document.fullscreenElement !== tile) await tile.requestFullscreen()
+      await node.requestFullscreen()
+      nativeFullscreen.current = true
+      setFullscreen(true)
+      document.body.classList.add('live-fullscreen')
+      await window.electronAPI?.setWindowFullscreen?.(true)
     } catch (error) {
-      console.warn('Fullscreen da página recusado.', error)
+      console.warn('Fullscreen no container recusado, elevando o player.', error)
+      setLifted(true)
     }
-    await window.electronAPI?.setWindowFullscreen?.(true)
   }
 
   async function togglePip(): Promise<void> {
@@ -333,17 +492,17 @@ export function VideoStage({
     setTransform('translate(0px, 0px) scale(1)')
   }
 
-  return (
+  const player = (
     <div
       ref={containerRef}
-      className={`relative h-full w-full overflow-hidden bg-black ${canvas && !zoomed ? 'stage-drag cursor-grab' : ''} ${zoomed ? 'cursor-move' : ''}`}
+      className={`relative overflow-hidden bg-black ${lifted ? 'fixed inset-0 z-[200] h-screen w-screen' : 'h-full w-full'} ${!lifted && canvas && !zoomed ? 'stage-drag cursor-grab' : ''} ${zoomed ? 'cursor-move' : ''}`}
       onDoubleClick={(event) => {
         if ((event.target as HTMLElement).closest('[data-hud]')) return
         resetZoom()
       }}
       onPointerDown={(event) => {
         if (inHud(event.target)) return
-        if (canvas && scaleRef.current <= 1) return
+        if (canvas && !lifted && scaleRef.current <= 1) return
         dragRef.current = {
           x: event.clientX - panRef.current.x,
           y: event.clientY - panRef.current.y,
@@ -363,7 +522,7 @@ export function VideoStage({
       onPointerUp={() => {
         const drag = dragRef.current
         dragRef.current = null
-        if (canvas) return
+        if (canvas && !lifted) return
         if (drag && !drag.moved && scaleRef.current === 1) onFocus()
       }}
     >
@@ -374,6 +533,9 @@ export function VideoStage({
         className="h-full w-full object-contain"
         style={{ transform, transformOrigin: 'center center' }}
       />
+      {showFloats
+        ? webcams.map((cam, index) => <FloatingCam key={cam.id} cam={cam} origin={{ x: 12, y: 12 + index * 108 }} />)
+        : null}
       {showStats ? <StatsOverlay stats={stats} pending={!stats} facts={facts} /> : null}
       <div
         data-hud
@@ -396,16 +558,29 @@ export function VideoStage({
           aria-label="Volume"
           type="range"
           min={0}
-          max={100}
-          value={Math.round(volume * 100)}
+          max={300}
+          value={Math.round(gain * 100)}
           disabled={isSelf}
           onChange={(event) => {
-            const next = Number(event.target.value) / 100
+            const next = clampVolume(Number(event.target.value) / 100)
             onVolume(next)
             onMuted(next === 0)
           }}
           className="w-24 disabled:opacity-40"
         />
+        <span className="w-10 text-right text-[10px] tabular-nums text-ink">{Math.round(gain * 100)}%</span>
+        {screenShare ? (
+          <button
+            type="button"
+            title={floatsOn ? 'Ocultar câmeras' : 'Mostrar câmeras'}
+            aria-label={floatsOn ? 'Ocultar câmeras' : 'Mostrar câmeras'}
+            aria-pressed={floatsOn}
+            onClick={() => writeFloatingWebcams(!floatsOn)}
+            className="rounded-md p-1.5 text-ink hover:bg-white/10"
+          >
+            {floatsOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+          </button>
+        ) : null}
         <button
           type="button"
           title={pip ? 'Sair do picture-in-picture' : 'Picture-in-picture'}
@@ -424,11 +599,7 @@ export function VideoStage({
         >
           {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
         </button>
-        <div
-          className="relative"
-          onMouseEnter={() => setInfoOpen(true)}
-          onMouseLeave={() => setInfoOpen(false)}
-        >
+        <div className="relative" onMouseEnter={() => setInfoOpen(true)} onMouseLeave={() => setInfoOpen(false)}>
           <button
             type="button"
             title="Detalhes da transmissão"
@@ -483,4 +654,7 @@ export function VideoStage({
       </div>
     </div>
   )
+
+  if (lifted) return createPortal(player, document.body)
+  return player
 }

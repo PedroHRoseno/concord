@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { readSoundPrefs, writeSoundEnabled, writeSoundVolume } from '@renderer/utils/soundEffects'
+import { listOutputDevices, readDiscordClientId, readSinkId, writeDiscordClientId, writeSinkId } from '@renderer/lib/playback'
 
 interface SettingsSheetProps {
   onClose: () => void
@@ -26,6 +27,23 @@ export function SettingsSheet({ onClose }: SettingsSheetProps) {
   const [problem, setProblem] = useState<string | null>(null)
   const [soundsOn, setSoundsOn] = useState(() => readSoundPrefs().enabled)
   const [soundVolume, setSoundVolume] = useState(() => Math.round(readSoundPrefs().volume * 100))
+  const [sinkId, setSinkId] = useState(readSinkId)
+  const [outputs, setOutputs] = useState<Array<{ deviceId: string; label: string }>>([])
+  const [discordId, setDiscordId] = useState(readDiscordClientId)
+
+  useEffect(() => {
+    let cancel = false
+    void listOutputDevices()
+      .then((devices) => {
+        if (!cancel) setOutputs(devices)
+      })
+      .catch(() => {
+        if (!cancel) setOutputs([])
+      })
+    return () => {
+      cancel = true
+    }
+  }, [])
 
   useEffect(() => {
     const read = window.electronAPI?.getHotkey
@@ -103,7 +121,44 @@ export function SettingsSheet({ onClose }: SettingsSheetProps) {
             className="mt-2 w-full disabled:opacity-40"
           />
         </label>
-        <p className="mt-3 text-xs text-muted">Ctrl+Shift+N continua abrindo outra janela.</p>
+        <label className="mt-5 block text-xs text-muted">
+          Dispositivo de saída
+          <select
+            value={sinkId}
+            aria-label="Dispositivo de saída"
+            onChange={(event) => {
+              const next = event.target.value
+              setSinkId(next)
+              writeSinkId(next)
+            }}
+            className="mt-2 h-10 w-full rounded-lg bg-app px-2 text-sm text-ink ring-1 ring-line"
+          >
+            <option value="">Padrão do sistema</option>
+            {outputs.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="mt-5 block text-xs text-muted">
+          Client ID do Discord
+          <input
+            value={discordId}
+            aria-label="Client ID do Discord"
+            placeholder="Cole o Client ID para a presença"
+            onChange={(event) => {
+              const next = event.target.value.trim()
+              setDiscordId(next)
+              writeDiscordClientId(next)
+            }}
+            onBlur={(event) => {
+              void window.electronAPI?.setDiscordClient?.(event.currentTarget.value.trim())
+            }}
+            className="mt-2 h-10 w-full rounded-lg bg-app px-3 text-sm text-ink ring-1 ring-line"
+          />
+        </label>
+        <p className="mt-3 text-xs text-muted">Ctrl+Shift+N continua abrindo outra janela. Sem o Client ID, o Discord fica sem presença.</p>
       </div>
     </div>,
     document.body

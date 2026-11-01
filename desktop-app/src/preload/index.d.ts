@@ -10,12 +10,13 @@ export interface CapturePrepareOptions {
   sourceId: string
   shareAudio: boolean
   loopbackWithScreen?: boolean
+  nativePicker?: boolean
 }
 
 export interface QuickShareSettings {
   sourceId: string
   sourceName: string
-  audioMode: 'none' | 'system' | 'window' | 'device'
+  audioMode: 'none' | 'system' | 'window' | 'device' | 'tab'
   audioDeviceId: string
   resolution: '720p' | '1080p' | '1440p' | 'native'
   fps: 30 | 60
@@ -28,6 +29,7 @@ export interface ElectronBridge {
   getDesktopSources: () => Promise<DesktopSourceInfo[]>
   prepareCapture: (options: CapturePrepareOptions) => Promise<boolean>
   setCaptureActive: (active: boolean) => Promise<void>
+  restoreCapture: () => Promise<void>
   getMicrophoneAccess: () => Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'>
   connectAudioLoopback: (onChunk: (bytes: Uint8Array) => void) => void
   startAudioLoopback: (sourceId: string) => Promise<{ ok: boolean; isolated: boolean; pid: number | null }>
@@ -40,6 +42,8 @@ export interface ElectronBridge {
   onQuickShareStart: (listener: (settings: QuickShareSettings) => void) => () => void
   onQuickShareStop: (listener: () => void) => () => void
   setRoomState: (state: { inRoom: boolean; sharing: boolean }) => Promise<void>
+  setDiscordClient: (clientId: string) => Promise<void>
+  setDiscordPresence: (presence: { inRoom: boolean; roomName: string; sharing: boolean; sourceName: string }) => Promise<void>
   getRoomState: () => Promise<{ inRoom: boolean; sharing: boolean }>
   confirmQuickShare: (settings: QuickShareSettings) => Promise<void>
   stopQuickShare: () => Promise<void>

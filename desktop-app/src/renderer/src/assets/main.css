@@ -112,13 +112,8 @@ summary::-webkit-details-marker {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
 }
 
-[data-present='fullscreen'] [data-hud],
-[data-present='pip'] [data-hud] {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-body.live-fullscreen .room-chrome {
+body.live-fullscreen .room-chrome,
+body.live-fullscreen .titlebar-drag {
   display: none !important;
 }
 

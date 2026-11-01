@@ -5,6 +5,7 @@ import { registerCapture } from './capture'
 import { registerHotkey } from './hotkey'
 import { resourcePath } from './paths'
 import { registerAudioLoopback } from './audioLoopback'
+import { registerDiscord } from './discord'
 import { registerUpdates } from './updates'
 
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
@@ -233,6 +234,7 @@ function registerWindowControls(): void {
 app.whenReady().then(() => {
   registerCapture()
   registerAudioLoopback()
+  registerDiscord()
   registerUpdates()
   registerWindowControls()
   registerHotkey(openShare)

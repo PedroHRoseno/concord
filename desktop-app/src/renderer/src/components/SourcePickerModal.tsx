@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AppWindow, Monitor, RefreshCw, X } from 'lucide-react'
+import { AppWindow, Globe, Monitor, RefreshCw, X } from 'lucide-react'
 import {
   AUDIO_BITRATES,
   RESOLUTION_OPTIONS,
@@ -11,7 +11,7 @@ import {
   type ResolutionPreset
 } from '@renderer/types'
 
-type SourceTab = 'window' | 'screen'
+type SourceTab = 'window' | 'screen' | 'browser'
 
 interface DesktopSource {
   id: string
@@ -101,7 +101,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
 
   useEffect(() => {
     setAudioChoice((current) => {
-      if (current === 'none' || current === 'device') return current
+      if (tab === 'browser' || current === 'none' || current === 'device') return current
       return tab === 'screen' ? 'system' : 'window'
     })
   }, [tab])
@@ -142,9 +142,6 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
   const selected = sources.find((source) => source.id === selectedId) ?? null
 
   function confirm(): void {
-    if (!selected) return
-    let audioMode: AudioSourceMode = audioChoice
-    if (audioMode === 'window' && selected.id.startsWith('screen:')) audioMode = 'system'
     try {
       localStorage.setItem(STORAGE_RESOLUTION, resolution)
       localStorage.setItem(STORAGE_FPS, String(fps))
@@ -152,6 +149,23 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
     } catch {
       // A transmissão segue mesmo se as preferências não puderem ser salvas.
     }
+    if (tab === 'browser') {
+      onConfirm({
+        sourceId: 'tab:native',
+        sourceName: 'Aba do navegador',
+        audioMode: 'tab',
+        audioDeviceId: '',
+        resolution,
+        fps,
+        maxBitrate,
+        audioBitrate,
+        contentHint
+      })
+      return
+    }
+    if (!selected) return
+    let audioMode: AudioSourceMode = audioChoice
+    if (audioMode === 'window' && selected.id.startsWith('screen:')) audioMode = 'system'
     onConfirm({
       sourceId: selected.id,
       sourceName: selected.name,
@@ -211,6 +225,17 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
           </button>
           <button
             type="button"
+            onClick={() => {
+              setTab('browser')
+              setSelectedId(null)
+            }}
+            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm ${tab === 'browser' ? 'bg-app text-ink' : 'text-muted hover:text-ink'}`}
+          >
+            <Globe className="h-4 w-4" aria-hidden="true" />
+            Aba do navegador
+          </button>
+          <button
+            type="button"
             onClick={() => void loadSources()}
             className="ml-auto inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm text-muted hover:bg-app hover:text-ink"
           >
@@ -220,11 +245,16 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {loadError ? <p className="text-sm text-danger">{loadError}</p> : null}
-          {loading && sources.length === 0 ? <p className="text-sm text-muted">Carregando miniaturas…</p> : null}
-          {!loading && visible.length === 0 ? (
+          {tab === 'browser' ? (
+            <p className="max-w-xl text-sm leading-6 text-muted">
+              Ao transmitir, o seletor do sistema abre para escolher a janela ou a aba. Marque o áudio nessa janela. Esse caminho não usa o isolamento por processo e deixa o áudio da janela e da tela como estão.
+            </p>
+          ) : null}
+          {tab !== 'browser' && loadError ? <p className="text-sm text-danger">{loadError}</p> : null}
+          {tab !== 'browser' && loading && sources.length === 0 ? <p className="text-sm text-muted">Carregando miniaturas…</p> : null}
+          {tab !== 'browser' && !loading && visible.length === 0 ? (
             <p className="text-sm text-muted">{tab === 'screen' ? 'Nenhuma tela encontrada.' : 'Nenhuma janela encontrada.'}</p>
-          ) : (
+          ) : tab !== 'browser' ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
               {visible.map((source) => {
                 const active = source.id === selectedId
@@ -254,17 +284,23 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                 )
               })}
             </div>
-          )}
+          ) : null}
         </div>
 
         <footer className="grid gap-3 border-t border-line p-4 sm:grid-cols-2">
           <label className="block text-xs text-muted sm:col-span-2">
             Áudio da transmissão
-            <select
-              value={audioChoice}
-              onChange={(event) => setAudioChoice(event.target.value as AudioChoice)}
-              className={`${fieldClass} mt-1`}
-            >
+            {tab === 'browser' ? (
+              <span className="mt-1 block text-[11px] leading-4">
+                O seletor do sistema pede o áudio da aba ou da janela escolhida. O isolamento WASAPI das outras abas continua igual.
+              </span>
+            ) : (
+              <>
+              <select
+                value={audioChoice}
+                onChange={(event) => setAudioChoice(event.target.value as AudioChoice)}
+                className={`${fieldClass} mt-1`}
+              >
               <option value="none">Sem áudio</option>
               <option value="window" disabled={tab === 'screen'}>
                 Áudio só desta janela
@@ -282,8 +318,10 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                 Tudo o que sai no alto-falante, menos o som do Concord.
               </span>
             ) : null}
+              </>
+            )}
           </label>
-          {audioChoice === 'device' ? (
+          {tab !== 'browser' && audioChoice === 'device' ? (
             <label className="block text-xs text-muted sm:col-span-2">
               Dispositivo
               <select
@@ -375,7 +413,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
             </button>
             <button
               type="button"
-              disabled={!selected}
+              disabled={tab !== 'browser' && !selected}
               onClick={confirm}
               className="h-10 rounded-lg bg-blurple px-4 text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             >

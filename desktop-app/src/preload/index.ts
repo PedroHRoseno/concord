@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 interface QuickShareSettings {
   sourceId: string
   sourceName: string
-  audioMode: 'none' | 'system' | 'window' | 'device'
+  audioMode: 'none' | 'system' | 'window' | 'device' | 'tab'
   audioDeviceId: string
   resolution: '720p' | '1080p' | '1440p' | 'native'
   fps: 30 | 60
@@ -40,8 +40,10 @@ const api = {
     sourceId: string
     shareAudio: boolean
     loopbackWithScreen?: boolean
+    nativePicker?: boolean
   }): Promise<boolean> => ipcRenderer.invoke('capture:prepare', options),
   setCaptureActive: (active: boolean): Promise<void> => ipcRenderer.invoke('capture:set-active', active),
+  restoreCapture: (): Promise<void> => ipcRenderer.invoke('capture:restore'),
   getMicrophoneAccess: (): Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'> =>
     ipcRenderer.invoke('audio:microphone-access'),
   connectAudioLoopback: (onChunk: (bytes: Uint8Array) => void): void => {
@@ -90,6 +92,13 @@ const api = {
     return () => ipcRenderer.removeListener('share:stop', wrapped)
   },
   setRoomState: (state: { inRoom: boolean; sharing: boolean }): Promise<void> => ipcRenderer.invoke('room:state', state),
+  setDiscordClient: (clientId: string): Promise<void> => ipcRenderer.invoke('discord:client', clientId),
+  setDiscordPresence: (presence: {
+    inRoom: boolean
+    roomName: string
+    sharing: boolean
+    sourceName: string
+  }): Promise<void> => ipcRenderer.invoke('discord:presence', presence),
   getRoomState: (): Promise<{ inRoom: boolean; sharing: boolean }> => ipcRenderer.invoke('picker:room-state'),
   confirmQuickShare: (settings: QuickShareSettings): Promise<void> => ipcRenderer.invoke('picker:confirm', settings),
   stopQuickShare: (): Promise<void> => ipcRenderer.invoke('picker:stop'),

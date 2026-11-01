@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Eye, GripHorizontal } from 'lucide-react'
 import { Avatar } from '@renderer/components/Avatar'
 import type { StreamMeta, WatcherInfo } from '@renderer/types'
 import { formatBitrateCap } from '@renderer/types'
-import { VideoStage, type StreamDetails } from '@renderer/components/VideoStage'
+import { VideoStage, type FloatCam, type FloatMode, type StreamDetails } from '@renderer/components/VideoStage'
 import type { DesktopAudioRoute } from '@renderer/lib/audio-loopback'
 
 export interface StageEntry {
@@ -20,6 +20,7 @@ export interface StageEntry {
   direction: 'inbound' | 'outbound'
   watchers: WatcherInfo[]
   peerId: string
+  reconnecting: boolean
 }
 
 interface StreamCardProps {
@@ -30,6 +31,8 @@ interface StreamCardProps {
   volume: number
   muted: boolean
   audioRoute: DesktopAudioRoute
+  floatMode: FloatMode
+  webcams: FloatCam[]
   onVolume: (value: number) => void
   onMuted: (value: boolean) => void
   onWatch: () => void
@@ -64,6 +67,8 @@ export function StreamCard({
   volume,
   muted,
   audioRoute,
+  floatMode,
+  webcams,
   onVolume,
   onMuted,
   onWatch,
@@ -82,16 +87,10 @@ export function StreamCard({
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
-  function reveal(event: PointerEvent<HTMLElement>): void {
+  function reveal(): void {
     setInside(true)
     window.clearTimeout(timer.current)
-    if (event.pointerType === 'touch') timer.current = window.setTimeout(() => setInside(false), 2500)
-  }
-
-  function conceal(event: PointerEvent<HTMLElement>): void {
-    if (event.pointerType === 'touch') return
-    window.clearTimeout(timer.current)
-    setInside(false)
+    timer.current = window.setTimeout(() => setInside(false), 2500)
   }
 
   return (
@@ -100,7 +99,6 @@ export function StreamCard({
       onPointerEnter={reveal}
       onPointerMove={reveal}
       onPointerDown={reveal}
-      onPointerLeave={conceal}
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false)
@@ -120,6 +118,8 @@ export function StreamCard({
             chrome={chrome}
             canvas={canvas}
             details={detailsOf(entry, audioRoute)}
+            floatMode={floatMode}
+            webcams={webcams}
             onVolume={onVolume}
             onMuted={onMuted}
             onFocus={onFocus}
@@ -131,6 +131,11 @@ export function StreamCard({
             {connecting ? 'Conectando à transmissão…' : 'Transmissão disponível'}
           </div>
         )}
+        {entry.reconnecting ? (
+          <div className="pointer-events-none absolute left-1/2 top-14 z-20 -translate-x-1/2 rounded-full bg-black/75 px-3 py-1 text-xs text-white">
+            Reconectando...
+          </div>
+        ) : null}
       </div>
       <div
         className={`stage-drag absolute inset-x-0 top-0 z-30 flex cursor-grab items-start gap-2 px-2.5 pt-2 text-ink transition-opacity duration-200 active:cursor-grabbing ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}

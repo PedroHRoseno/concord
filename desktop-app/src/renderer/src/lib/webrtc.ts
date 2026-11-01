@@ -73,6 +73,9 @@ interface PeerLink {
   videoSender: RTCRtpSender | null
   audioSender: RTCRtpSender | null
   pendingCandidates: RTCIceCandidateInit[]
+  recoveryTimer: number
+  attempts: number
+  recovering: boolean
 }
 
 function linkKey(streamId: string, viewerId: string): string {
@@ -109,6 +112,8 @@ export class MeshSession {
   private hostJobs = new Map<string, Promise<void>>()
   private locals = new Map<string, LocalPub>()
   private localWatchers = new Map<string, WatcherInfo[]>()
+  private rewatchTried = new Set<string>()
+  private pendingRewatch = new Set<string>()
   private silent: { context: AudioContext; track: MediaStreamTrack } | null = null
   private disposed = false
   private captureActive = false
@@ -195,6 +200,8 @@ export class MeshSession {
     if (streamId.endsWith(':webcam')) this.hiddenWebcams.add(streamId)
     this.watching.delete(streamId)
     this.watchMemory.delete(streamId)
+    this.rewatchTried.delete(streamId)
+    this.pendingRewatch.delete(streamId)
     this.socket.send({ type: 'unwatch', streamId })
     const owner = this.ownerOf(streamId)
     if (owner) this.closeLink(linkKey(streamId, this.peerId))
@@ -365,6 +372,8 @@ export class MeshSession {
       for (const streamId of peer.streams.keys()) {
         if (this.watching.has(streamId)) this.watchMemory.set(streamId, Date.now() + 8000)
         this.watching.delete(streamId)
+        this.rewatchTried.delete(streamId)
+        this.pendingRewatch.delete(streamId)
         this.remoteStreams.delete(streamId)
       }
     }
@@ -386,6 +395,8 @@ export class MeshSession {
       peer.watchers.delete(streamId)
       this.watchMemory.delete(streamId)
       this.watching.delete(streamId)
+      this.rewatchTried.delete(streamId)
+      this.pendingRewatch.delete(streamId)
       this.remoteStreams.delete(streamId)
       this.closeLink(linkKey(streamId, this.peerId))
     } else {
@@ -516,10 +527,153 @@ export class MeshSession {
     await this.addIce(payload)
   }
 
+  private async answerExisting(link: PeerLink, from: string, payload: SignalPayload): Promise<void> {
+    if (!payload.description) return
+    await link.pc.setRemoteDescription(payload.description)
+    await this.flushCandidates(link)
+    const answer = await link.pc.createAnswer()
+    const audioBitrate = this.metaOf(payload.streamId)?.audioBitrate ?? 256_000
+    answer.sdp = tuneOpus(answer.sdp ?? '', audioBitrate)
+    await link.pc.setLocalDescription(answer)
+    const description = link.pc.localDescription
+    if (!description || this.links.get(link.key) !== link) return
+    this.sendSignal(from, {
+      kind: 'answer',
+      streamId: payload.streamId,
+      broadcasterId: payload.broadcasterId,
+      viewerId: payload.viewerId,
+      description: { type: description.type, sdp: description.sdp }
+    })
+    this.emit()
+  }
+
+  private streamRecovering(streamId: string): boolean {
+    if (this.pendingRewatch.has(streamId)) return true
+    for (const link of this.links.values()) {
+      if (link.streamId === streamId && link.recovering) return true
+    }
+    return false
+  }
+
+  private noteIce(link: PeerLink): void {
+    if (this.links.get(link.key) !== link) return
+    const ice = link.pc.iceConnectionState
+    const connection = link.pc.connectionState
+    if (ice === 'connected' || ice === 'completed' || connection === 'connected') {
+      this.clearRecovery(link)
+      return
+    }
+    if (ice === 'disconnected' || ice === 'failed' || connection === 'failed') this.scheduleIceRestart(link)
+  }
+
+  private clearRecovery(link: PeerLink): void {
+    if (link.recoveryTimer) {
+      window.clearTimeout(link.recoveryTimer)
+      link.recoveryTimer = 0
+    }
+    const was = link.recovering || link.attempts > 0 || this.pendingRewatch.has(link.streamId)
+    link.recovering = false
+    link.attempts = 0
+    this.pendingRewatch.delete(link.streamId)
+    this.rewatchTried.delete(link.streamId)
+    if (!was) return
+    this.emit()
+    this.emitLocals()
+  }
+
+  private scheduleIceRestart(link: PeerLink): void {
+    if (link.recoveryTimer || link.pc.connectionState === 'closed') return
+    link.recovering = true
+    this.emit()
+    this.emitLocals()
+    link.recoveryTimer = window.setTimeout(() => {
+      link.recoveryTimer = 0
+      if (this.links.get(link.key) !== link || this.disposed) return
+      const ice = link.pc.iceConnectionState
+      const connection = link.pc.connectionState
+      if (ice === 'connected' || ice === 'completed' || connection === 'connected') {
+        this.clearRecovery(link)
+        return
+      }
+      if (ice === 'checking' || connection === 'connecting') {
+        this.scheduleIceRestart(link)
+        return
+      }
+      void this.restartLink(link)
+    }, 1500)
+  }
+
+  private async restartLink(link: PeerLink): Promise<void> {
+    if (this.links.get(link.key) !== link || this.disposed) return
+    link.attempts += 1
+    if (link.attempts > 3) {
+      this.giveUp(link)
+      return
+    }
+    if (link.role === 'host') {
+      try {
+        const pub = this.locals.get(link.streamId)
+        if (!pub) return
+        link.pc.restartIce()
+        const offer = await link.pc.createOffer({ iceRestart: true })
+        offer.sdp = tuneOpus(offer.sdp ?? '', pub.settings.audioBitrate)
+        await link.pc.setLocalDescription(offer)
+        const description = link.pc.localDescription
+        if (!description || this.links.get(link.key) !== link) return
+        this.sendSignal(link.viewerId, {
+          kind: 'offer',
+          streamId: link.streamId,
+          broadcasterId: link.broadcasterId,
+          viewerId: link.viewerId,
+          description: { type: description.type, sdp: description.sdp }
+        })
+      } catch (error) {
+        console.warn('ICE restart falhou.', error)
+      }
+      if (this.links.get(link.key) === link) this.scheduleIceRestart(link)
+      return
+    }
+    try {
+      link.pc.restartIce()
+    } catch (error) {
+      console.warn('ICE restart local falhou.', error)
+    }
+    if (this.links.get(link.key) === link) this.scheduleIceRestart(link)
+  }
+
+  private giveUp(link: PeerLink): void {
+    link.recovering = false
+    if (link.role === 'viewer' && !this.rewatchTried.has(link.streamId)) {
+      this.rewatchTried.add(link.streamId)
+      this.pendingRewatch.add(link.streamId)
+      this.closeLink(link.key)
+      this.watch(link.streamId)
+      return
+    }
+    if (link.role === 'viewer') {
+      this.pendingRewatch.delete(link.streamId)
+      this.watching.delete(link.streamId)
+      this.remoteStreams.delete(link.streamId)
+      this.events.onError('A conexão de mídia falhou. Tente assistir de novo.')
+    }
+    this.closeLink(link.key)
+    this.emit()
+    this.emitLocals()
+  }
+
   private async acceptOffer(from: string, payload: SignalPayload): Promise<void> {
     if (payload.viewerId !== this.peerId || !payload.description) return
     if (!this.watching.has(payload.streamId)) return
     const key = linkKey(payload.streamId, payload.viewerId)
+    const existing = this.links.get(key)
+    if (existing && existing.pc.signalingState === 'stable' && existing.pc.connectionState !== 'closed') {
+      try {
+        await this.answerExisting(existing, from, payload)
+        return
+      } catch (error) {
+        console.warn('Renegociação recusada, abrindo uma conexão nova.', error)
+      }
+    }
     this.closeLink(key)
     const link = this.createLink({
       key,
@@ -609,7 +763,10 @@ export class MeshSession {
       pc,
       videoSender: null,
       audioSender: null,
-      pendingCandidates: this.earlyIce.get(options.key) ?? []
+      pendingCandidates: this.earlyIce.get(options.key) ?? [],
+      recoveryTimer: 0,
+      attempts: 0,
+      recovering: false
     }
     this.earlyIce.delete(options.key)
     this.links.set(options.key, link)
@@ -640,16 +797,14 @@ export class MeshSession {
         const pub = this.locals.get(options.streamId)
         if (pub) void this.tuneSender(link, pub)
       }
-      if (pc.connectionState === 'failed') {
-        if (link.role === 'viewer') {
-          this.watching.delete(link.streamId)
-          this.remoteStreams.delete(link.streamId)
-          this.events.onError('A conexão de mídia falhou. Tente assistir de novo.')
-        }
-        this.closeLink(options.key)
-      }
+      this.noteIce(link)
       this.emit()
       this.emitLocals()
+    }
+
+    pc.oniceconnectionstatechange = () => {
+      if (this.links.get(options.key) !== link) return
+      this.noteIce(link)
     }
 
     return link
@@ -750,8 +905,11 @@ export class MeshSession {
     if (!link) return
     this.links.delete(key)
     link.pc.onconnectionstatechange = null
+    link.pc.oniceconnectionstatechange = null
     link.pc.ontrack = null
     link.pc.onicecandidate = null
+    if (link.recoveryTimer) window.clearTimeout(link.recoveryTimer)
+    link.recoveryTimer = 0
     link.pc.close()
   }
 
@@ -783,7 +941,8 @@ export class MeshSession {
       meta: toStreamMeta(pub.settings, pub.streamId, pub.streamType),
       media: pub.stream,
       watchers: (this.localWatchers.get(pub.streamId) ?? []).map((watcher) => this.presentWatcher(watcher)),
-      pc: this.hostPc(pub.streamId)
+      pc: this.hostPc(pub.streamId),
+      reconnecting: this.streamRecovering(pub.streamId)
     }))
     this.events.onLocals(publications)
   }
@@ -800,7 +959,8 @@ export class MeshSession {
         media: this.remoteStreams.get(meta.streamId) ?? null,
         watching: this.watching.has(meta.streamId),
         pc: this.links.get(linkKey(meta.streamId, this.peerId))?.pc ?? null,
-        watchers: (peer.watchers.get(meta.streamId) ?? []).map((watcher) => this.presentWatcher(watcher))
+        watchers: (peer.watchers.get(meta.streamId) ?? []).map((watcher) => this.presentWatcher(watcher)),
+        reconnecting: this.streamRecovering(meta.streamId)
       }))
     }))
     this.events.onSnapshot({ peers })

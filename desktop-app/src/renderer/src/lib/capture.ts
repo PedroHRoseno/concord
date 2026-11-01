@@ -95,6 +95,31 @@ export async function captureDesktop(settings: CaptureSettings): Promise<MediaSt
   releaseSystemAudioAnchor()
   audioFailure = null
 
+  if (settings.audioMode === 'tab') {
+    const prepared = await window.electronAPI.prepareCapture({
+      sourceId: 'tab:native',
+      shareAudio: true,
+      nativePicker: true
+    })
+    if (!prepared) throw new Error('Não foi possível abrir o seletor do sistema.')
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+      const video = stream.getVideoTracks()[0]
+      if (!video) {
+        stream.getTracks().forEach((track) => track.stop())
+        throw new Error('A captura não devolveu vídeo.')
+      }
+      video.contentHint = settings.contentHint
+      if (video.label) settings.sourceName = video.label.slice(0, 180)
+      if (!liveAudioTrack(stream)) {
+        audioFailure = 'A aba foi compartilhada sem áudio. Marque o áudio no seletor do sistema.'
+      }
+      return stream
+    } finally {
+      void window.electronAPI.restoreCapture()
+    }
+  }
+
   let stream: MediaStream
   if (settings.audioMode === 'window' && settings.sourceId.startsWith('window:')) {
     stream = await openVideo(settings)

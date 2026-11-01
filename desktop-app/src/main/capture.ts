@@ -4,11 +4,13 @@ interface PendingCapture {
   sourceId: string
   shareAudio: boolean
   loopbackWithScreen?: boolean
+  nativePicker?: boolean
 }
 
 const pendingByContents = new Map<number, PendingCapture>()
 let activeCaptures = 0
 let blockerId: number | null = null
+let systemPicker = false
 
 const emptyThumbnail = { width: 0, height: 0 }
 
@@ -21,17 +23,18 @@ async function findSource(sourceId: string): Promise<DesktopCapturerSource | und
   return sources.find((source) => source.id === sourceId)
 }
 
-export function registerCapture(): void {
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(permission === 'media' || permission === 'display-capture' || permission === 'mediaKeySystem')
-  })
-
+function bindDisplayHandler(): void {
   session.defaultSession.setDisplayMediaRequestHandler(
     async (request, callback) => {
       try {
         const contentsId = request.frame ? webContents.fromFrame(request.frame)?.id : undefined
         const pending = (contentsId !== undefined ? pendingByContents.get(contentsId) : undefined) ?? [...pendingByContents.values()].at(-1)
         if (!pending) {
+          callback(null)
+          return
+        }
+        if (pending.nativePicker) {
+          if (contentsId !== undefined) pendingByContents.delete(contentsId)
           callback(null)
           return
         }
@@ -59,8 +62,16 @@ export function registerCapture(): void {
         callback(null)
       }
     },
-    { useSystemPicker: false }
+    { useSystemPicker: systemPicker }
   )
+}
+
+export function registerCapture(): void {
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'media' || permission === 'display-capture' || permission === 'mediaKeySystem')
+  })
+
+  bindDisplayHandler()
 
   ipcMain.handle('sources:list', async () => {
     const sources = await desktopCapturer.getSources({
@@ -79,12 +90,25 @@ export function registerCapture(): void {
 
   ipcMain.handle('capture:prepare', (event, options: PendingCapture) => {
     if (!options || typeof options.sourceId !== 'string') return false
+    const nativePicker = Boolean(options.nativePicker)
+    if (nativePicker && process.platform !== 'darwin') {
+      session.defaultSession.setDisplayMediaRequestHandler(null)
+    } else {
+      systemPicker = nativePicker
+      bindDisplayHandler()
+    }
     pendingByContents.set(event.sender.id, {
       sourceId: options.sourceId,
       shareAudio: Boolean(options.shareAudio),
-      loopbackWithScreen: Boolean(options.loopbackWithScreen)
+      loopbackWithScreen: Boolean(options.loopbackWithScreen),
+      nativePicker
     })
     return true
+  })
+
+  ipcMain.handle('capture:restore', () => {
+    systemPicker = false
+    bindDisplayHandler()
   })
 
   ipcMain.handle('audio:microphone-access', () => systemPreferences.getMediaAccessStatus('microphone'))

@@ -1,4 +1,5 @@
 import { Monitor, Video } from 'lucide-react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Avatar } from '@renderer/components/Avatar'
 import type { LocalPublication, PeerView, PublicProfile, StreamMeta, UserProfile } from '@renderer/types'
 
@@ -32,7 +33,35 @@ function badge(meta: StreamMeta | undefined): { label: string; className: string
   return { label: 'Ao vivo', className: 'bg-live/15 text-live' }
 }
 
+const WIDTH_KEY = 'screenshare.sidebar.width'
+
+function readSidebarWidth(): number {
+  try {
+    const value = Number(localStorage.getItem(WIDTH_KEY))
+    if (Number.isFinite(value)) return Math.min(450, Math.max(200, value))
+  } catch {
+    /* a largura padrão continua valendo */
+  }
+  return 256
+}
+
 export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWatch, onUnwatch, onEditSelf }: MemberListProps) {
+  const [width, setWidth] = useState(readSidebarWidth)
+  const drag = useRef<{ x: number; width: number } | null>(null)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WIDTH_KEY, String(width))
+    } catch {
+      /* a largura vale nesta sessão */
+    }
+  }, [width])
+
+  function resize(event: ReactPointerEvent<HTMLDivElement>): void {
+    const current = drag.current
+    if (!current) return
+    setWidth(Math.min(450, Math.max(200, current.width + (current.x - event.clientX))))
+  }
   const people: Person[] = [
     {
       peerId: selfId,
@@ -51,7 +80,21 @@ export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWat
   ]
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-l border-line bg-elevated">
+    <aside className="relative flex shrink-0 flex-col border-l border-line bg-elevated" style={{ width }}>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionar a lista da sala"
+        className="absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize"
+        onPointerDown={(event) => {
+          drag.current = { x: event.clientX, width }
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }}
+        onPointerMove={resize}
+        onPointerUp={() => {
+          drag.current = null
+        }}
+      />
       <h2 className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Na sala</h2>
       <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3">
         {people.map((person) => {
