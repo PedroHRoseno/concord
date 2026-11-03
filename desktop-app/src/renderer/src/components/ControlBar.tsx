@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeftRight, HeadphoneOff, Headphones, LogOut, Mic, MicOff, RefreshCw, ScreenShare, Settings, Square, Video } from 'lucide-react'
+import { ArrowLeftRight, AudioWaveform, HeadphoneOff, Headphones, LogOut, Mic, MicOff, RefreshCw, ScreenShare, Settings, Square, Video } from 'lucide-react'
 import { canShareScreen, useMobileLayout } from '@renderer/lib/platform'
+import { toggledSuppressorMode, useVoiceProcessing, type SuppressorMode } from '@renderer/lib/suppressor'
 
 interface ControlBarProps {
   sharing: boolean
@@ -10,6 +11,7 @@ interface ControlBarProps {
   busy: boolean
   onToggleMic: () => void
   onToggleDeafen: () => void
+  onToggleSuppressor: (mode: SuppressorMode) => void
   onFlipCamera?: () => void
   onShare: () => void
   onSwap: () => void
@@ -19,9 +21,10 @@ interface ControlBarProps {
   onLeave: () => void
 }
 
-export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggleMic, onToggleDeafen, onFlipCamera, onShare, onSwap, onStop, onWebcam, onSettings, onLeave }: ControlBarProps) {
+export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggleMic, onToggleDeafen, onToggleSuppressor, onFlipCamera, onShare, onSwap, onStop, onWebcam, onSettings, onLeave }: ControlBarProps) {
   const mobile = useMobileLayout()
   const shareScreen = canShareScreen()
+  const processing = useVoiceProcessing()
   const [hotkey, setHotkey] = useState('Alt+S')
   const [voiceKeys, setVoiceKeys] = useState({ mute: '', deafen: '' })
 
@@ -108,6 +111,16 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
           className={`inline-flex ${hit} ${mobile ? 'w-12' : 'w-10'} items-center justify-center rounded-xl transition-all duration-200 ease-out active:scale-95 ${micOn ? 'bg-elevated text-ink ring-1 ring-line' : 'bg-danger/90 text-white'}`}
         >
           {micOn ? <Mic className="h-4 w-4" aria-hidden="true" /> : <MicOff className="h-4 w-4" aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => onToggleSuppressor(toggledSuppressorMode())}
+          title="Supressão de Ruído IA (RNNoise)"
+          aria-label="Supressão de Ruído IA (RNNoise)"
+          aria-pressed={processing.mode === 'rnnoise'}
+          className={`inline-flex ${hit} ${mobile ? 'w-12' : 'w-10'} items-center justify-center rounded-xl transition-all duration-200 ease-out active:scale-95 ${processing.mode === 'rnnoise' ? 'bg-blurple text-white' : 'bg-elevated text-ink ring-1 ring-line'}`}
+        >
+          <AudioWaveform className="h-4 w-4" aria-hidden="true" />
         </button>
         <button
           type="button"

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { applySink, readSinkId, subscribeSink } from '@renderer/lib/playback'
+import { pumpSuppressor } from '@renderer/lib/suppressor'
 
 const PREFS_KEY = 'concord.voice.prefs'
 const INPUT_KEY = 'concord.voice.input'
@@ -44,7 +45,9 @@ let local: { peerId: string; source: MediaStreamAudioSourceNode; meter: Meter } 
 const speaking = new Set<string>()
 const speakingListeners = new Set<() => void>()
 const prefsListeners = new Set<() => void>()
+const levelListeners = new Set<() => void>()
 let prefsVersion = 0
+let micLevel = 0
 
 function readAllPrefs(): Record<string, PeerPrefs> {
   try {
@@ -124,6 +127,23 @@ export function useSpeaking(peerId: string): boolean {
   )
 }
 
+function publishLevel(rms: number): void {
+  const next = Math.min(1, rms * 14)
+  if (Math.abs(next - micLevel) < 0.02) return
+  micLevel = next
+  for (const listener of levelListeners) listener()
+}
+
+export function useMicLevel(): number {
+  return useSyncExternalStore(
+    (listener) => {
+      levelListeners.add(listener)
+      return () => levelListeners.delete(listener)
+    },
+    () => micLevel
+  )
+}
+
 function audioContext(): AudioContext {
   if (ctx && ctx.state !== 'closed') {
     if (ctx.state === 'suspended') void ctx.resume()
@@ -154,6 +174,7 @@ function sample(meter: Meter, key: string, now: number, silenced: boolean): void
   let sum = 0
   for (let i = 0; i < meter.data.length; i++) sum += meter.data[i] * meter.data[i]
   const rms = Math.sqrt(sum / meter.data.length)
+  if (local && key === local.peerId) publishLevel(rms)
   const threshold = meter.speaking ? OFF_LEVEL : ON_LEVEL
   if (!silenced && rms > threshold) meter.lastLoud = now
   const active = !silenced && now - meter.lastLoud < HOLD_MS
@@ -165,6 +186,7 @@ function sample(meter: Meter, key: string, now: number, silenced: boolean): void
 
 function tick(): void {
   const now = performance.now()
+  pumpSuppressor()
   if (local) sample(local.meter, local.peerId, now, false)
   for (const remote of remotes.values()) sample(remote.meter, remote.peerId, now, false)
 }
@@ -209,30 +231,6 @@ export async function listInputDevices(): Promise<Array<{ deviceId: string; labe
     .map((device, index) => ({ deviceId: device.deviceId, label: device.label || `Microfone ${index + 1}` }))
 }
 
-export async function openMic(): Promise<MediaStream> {
-  const deviceId = readInputDeviceId()
-  const attempt = (exact: boolean): Promise<MediaStream> =>
-    navigator.mediaDevices.getUserMedia({
-      video: false,
-      audio: {
-        deviceId: deviceId ? (exact ? { exact: deviceId } : { ideal: deviceId }) : undefined,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-        channelCount: 1,
-        sampleRate: 48_000
-      }
-    })
-  try {
-    return await attempt(true)
-  } catch (error) {
-    if (deviceId && error instanceof DOMException && (error.name === 'OverconstrainedError' || error.name === 'NotFoundError')) {
-      return attempt(false)
-    }
-    throw error
-  }
-}
-
 /** Mede o microfone local (anel verde) sem ligá-lo à saída, para não gerar eco. */
 export function attachLocalMeter(peerId: string, stream: MediaStream): void {
   detachLocalMeter()
@@ -250,6 +248,7 @@ export function detachLocalMeter(): void {
   local.meter.analyser.disconnect()
   setSpeaking(local.peerId, false)
   local = null
+  publishLevel(0)
   stopTimerIfIdle()
 }
 

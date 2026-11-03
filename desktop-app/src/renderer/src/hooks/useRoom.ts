@@ -9,7 +9,17 @@ import {
 } from '@renderer/lib/capture'
 import { normalizeTurn } from '@renderer/lib/ice'
 import { isMobile } from '@renderer/lib/platform'
-import { attachLocalMeter, closeVoice, detachLocalMeter, openMic, setDeafened } from '@renderer/lib/voice'
+import {
+  ensureVoiceOutput,
+  isVoicePublished,
+  releaseVoiceCapture,
+  rebuildVoiceOutput,
+  setVoiceEndedHandler,
+  setVoicePublished,
+  writeSuppressorMode,
+  type SuppressorMode
+} from '@renderer/lib/suppressor'
+import { attachLocalMeter, closeVoice, detachLocalMeter, setDeafened } from '@renderer/lib/voice'
 import { publicProfileOf, readProfile, writeProfile } from '@renderer/lib/profile'
 import { MeshSession } from '@renderer/lib/webrtc'
 import type {
@@ -97,6 +107,7 @@ export function useRoom() {
   const [micOn, setMicOn] = useState(false)
   const [deafened, setDeafenedState] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [signalingUrl, setSignalingUrl] = useState('')
   const micRef = useRef(false)
   const deafRef = useRef(false)
   const micBeforeDeafRef = useRef(false)
@@ -107,14 +118,19 @@ export function useRoom() {
 
   useEffect(() => {
     return () => {
+      setVoiceEndedHandler(null)
       sessionRef.current?.dispose()
       sessionRef.current = null
+      setVoicePublished(false)
+      releaseVoiceCapture()
       closeVoice()
     }
   }, [])
 
   const resetVoice = useCallback(() => {
+    setVoicePublished(false)
     detachLocalMeter()
+    releaseVoiceCapture()
     closeVoice()
     micRef.current = false
     deafRef.current = false
@@ -142,19 +158,40 @@ export function useRoom() {
     }
     if (!voiceLiveRef.current) {
       try {
-        const stream = await openMic()
+        const stream = await ensureVoiceOutput()
+        if (!stream) return
         await session.publishVoice(stream)
+        setVoicePublished(true)
         voiceLiveRef.current = true
         setVoiceLive(true)
         attachLocalMeter(selfIdRef.current, stream)
         applyMic(true)
       } catch (caught) {
+        if (!isVoicePublished()) releaseVoiceCapture()
         setError(micErrorMessage(caught))
       }
       return
     }
     applyMic(!micRef.current)
   }, [applyMic])
+
+  const applySuppressor = useCallback(async (mode: SuppressorMode) => {
+    writeSuppressorMode(mode)
+    if (!voiceLiveRef.current) return
+    const session = sessionRef.current
+    if (!session) return
+    try {
+      const stream = await rebuildVoiceOutput()
+      if (!stream) return
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = micRef.current
+      })
+      await session.replaceVoiceTrack(stream)
+      attachLocalMeter(selfIdRef.current, stream)
+    } catch (caught) {
+      setError(micErrorMessage(caught))
+    }
+  }, [])
 
   const toggleDeafen = useCallback(() => {
     const next = !deafRef.current
@@ -168,6 +205,20 @@ export function useRoom() {
       applyMic(true)
     }
   }, [applyMic])
+
+  useEffect(() => {
+    setVoiceEndedHandler(() => {
+      sessionRef.current?.stopStream('voice')
+      setVoicePublished(false)
+      detachLocalMeter()
+      releaseVoiceCapture()
+      voiceLiveRef.current = false
+      micRef.current = false
+      setVoiceLive(false)
+      setMicOn(false)
+    })
+    return () => setVoiceEndedHandler(null)
+  }, [])
 
   useEffect(() => {
     const stopMute = window.electronAPI?.onVoiceToggleMute?.(() => void toggleMic())
@@ -224,6 +275,7 @@ export function useRoom() {
     })
     resetVoice()
     selfIdRef.current = peerId
+    setSignalingUrl(input.signalingUrl.trim())
     setChatMessages([])
     sessionRef.current = session
     setProfile(saved)
@@ -238,9 +290,11 @@ export function useRoom() {
   }, [resetVoice])
 
   const leave = useCallback(() => {
+    setVoiceEndedHandler(null)
     sessionRef.current?.dispose()
     sessionRef.current = null
     resetVoice()
+    setSignalingUrl('')
     setChatMessages([])
     releaseSystemAudioAnchor()
     setPhase('lobby')
@@ -349,8 +403,10 @@ export function useRoom() {
     voiceLive,
     micOn,
     deafened,
+    signalingUrl,
     toggleMic,
     toggleDeafen,
+    applySuppressor,
     chatMessages,
     sendChat,
     screenLive,

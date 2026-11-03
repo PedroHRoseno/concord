@@ -2,7 +2,6 @@ import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, us
 import { Rnd, type HandleStyles } from 'react-rnd'
 import { StreamCard, type StageEntry } from '@renderer/components/StreamCard'
 import type { FloatCam } from '@renderer/components/VideoStage'
-import { clampVolume } from '@renderer/lib/playback'
 import type { DesktopAudioRoute } from '@renderer/lib/audio-loopback'
 import { useMobileLayout } from '@renderer/lib/platform'
 import { clampTile, cornerLayout, equalGrid, placeNew, type TileBox } from '@renderer/lib/stage-layout'
@@ -24,6 +23,8 @@ interface StageProps {
   cameraRail: CameraRail
   isolateAudio: boolean
   audioRoute: DesktopAudioRoute
+  mixes: Record<string, AudioMix>
+  onMix: (id: string, patch: Partial<AudioMix>) => void
   onWatch: (id: string) => void
   onUnwatch: (id: string) => void
   onLayoutChange: (layout: 'grid' | 'focus') => void
@@ -45,12 +46,11 @@ const RESIZE: HandleStyles = {
 }
 
 export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
-  { entries, layout, cameraRail, isolateAudio, audioRoute, onWatch, onUnwatch, onLayoutChange },
+  { entries, layout, cameraRail, isolateAudio, audioRoute, mixes, onMix, onWatch, onUnwatch, onLayoutChange },
   ref
 ) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const mobile = useMobileLayout()
-  const [mixes, setMixes] = useState<Record<string, AudioMix>>({})
   const [tiles, setTiles] = useState<Record<string, Tile>>({})
   const [stamp, setStamp] = useState(0)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -224,12 +224,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
   }
 
   function updateMix(id: string, patch: Partial<AudioMix>): void {
-    setMixes((current) => {
-      const previous = current[id] ?? { volume: 1, muted: false }
-      const next = { ...previous, ...patch }
-      if (patch.volume !== undefined) next.volume = clampVolume(patch.volume)
-      return { ...current, [id]: next }
-    })
+    onMix(id, patch)
   }
 
   function zBand(streamType: string | undefined): { min: number; max: number } {

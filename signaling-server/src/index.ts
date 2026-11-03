@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { WebSocketServer, type RawData } from 'ws'
 import { RoomHub } from './rooms.js'
+import { clientIp, unfurl } from './unfurl.js'
 
 const port = Number(process.env.PORT ?? 8080)
 const host = process.env.HOST ?? '0.0.0.0'
@@ -60,6 +61,14 @@ function handleHttp(req: IncomingMessage, res: ServerResponse): void {
   }
   if (req.method === 'GET' && path === '/turn') {
     void fetchTurn().then((body) => writeJson(res, 200, body))
+    return
+  }
+  if (req.method === 'GET' && path === '/unfurl') {
+    const target = new URL(req.url ?? '/', 'http://signaling.local').searchParams.get('url') ?? ''
+    void unfurl(target, clientIp(req)).then((body) => {
+      if ('status' in body) writeJson(res, body.status, { error: body.error })
+      else writeJson(res, 200, body)
+    })
     return
   }
   res.writeHead(200, {

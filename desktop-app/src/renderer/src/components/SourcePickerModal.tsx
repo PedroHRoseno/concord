@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AppWindow, HelpCircle, Monitor, RefreshCw, Search, X } from 'lucide-react'
-import {
-  AUDIO_BITRATES,
-  RESOLUTION_OPTIONS,
-  VIDEO_BITRATES,
-  type AudioSourceMode,
-  type CaptureSettings,
-  type ContentHint,
-  type ResolutionPreset
-} from '@renderer/types'
+import { AUDIO_BITRATES, RESOLUTION_OPTIONS, VIDEO_BITRATES, type AudioSourceMode, type CaptureSettings, type ContentHint, type ResolutionPreset } from '@renderer/types'
+import { readCaptureBitrate, readCaptureFps, readCaptureResolution, writeCapturePrefs } from '@renderer/lib/capture-prefs'
 
 type SourceTab = 'window' | 'screen'
 
@@ -31,31 +24,6 @@ interface SourcePickerModalProps {
 type AudioChoice = 'none' | 'window' | 'system' | 'device'
 
 const fieldClass = 'h-10 w-full rounded-md bg-app px-2 text-sm text-ink ring-1 ring-line'
-const STORAGE_RESOLUTION = 'screenshare.capture.resolution'
-const STORAGE_FPS = 'screenshare.capture.fps'
-const STORAGE_BITRATE = 'screenshare.capture.bitrate'
-
-function readCaptureStorage(key: string): string {
-  try {
-    return localStorage.getItem(key) ?? ''
-  } catch {
-    return ''
-  }
-}
-
-function storedResolution(): ResolutionPreset {
-  const value = readCaptureStorage(STORAGE_RESOLUTION)
-  return value === '720p' || value === '1080p' || value === '1440p' || value === 'native' ? value : '1080p'
-}
-
-function storedFps(): 30 | 60 {
-  return readCaptureStorage(STORAGE_FPS) === '30' ? 30 : 60
-}
-
-function storedBitrate(): number {
-  const value = Number(readCaptureStorage(STORAGE_BITRATE))
-  return VIDEO_BITRATES.some((item) => item.value === value) ? value : 12_000_000
-}
 
 export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, onStop }: SourcePickerModalProps) {
   const [tab, setTab] = useState<SourceTab>('window')
@@ -66,9 +34,9 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
   const [audioChoice, setAudioChoice] = useState<AudioChoice>('window')
   const [audioDeviceId, setAudioDeviceId] = useState('')
   const [devices, setDevices] = useState<Array<{ deviceId: string; label: string }>>([])
-  const [resolution, setResolution] = useState<ResolutionPreset>(storedResolution)
-  const [fps, setFps] = useState<30 | 60>(storedFps)
-  const [maxBitrate, setMaxBitrate] = useState<number>(storedBitrate)
+  const [resolution, setResolution] = useState<ResolutionPreset>(readCaptureResolution)
+  const [fps, setFps] = useState<30 | 60>(readCaptureFps)
+  const [maxBitrate, setMaxBitrate] = useState<number>(readCaptureBitrate)
   const [audioBitrate, setAudioBitrate] = useState<number>(256_000)
   const [contentHint, setContentHint] = useState<ContentHint>('motion')
   const [query, setQuery] = useState('')
@@ -178,13 +146,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
   const selected = sources.find((source) => source.id === selectedId) ?? null
 
   function confirm(): void {
-    try {
-      localStorage.setItem(STORAGE_RESOLUTION, resolution)
-      localStorage.setItem(STORAGE_FPS, String(fps))
-      localStorage.setItem(STORAGE_BITRATE, String(maxBitrate))
-    } catch {
-      // A transmissão segue mesmo se as preferências não puderem ser salvas.
-    }
+    writeCapturePrefs(resolution, fps, maxBitrate)
     if (!selected) return
     let audioMode: AudioSourceMode = audioChoice
     if (audioMode === 'window' && selected.id.startsWith('screen:')) audioMode = 'system'

@@ -3,8 +3,7 @@ import { Columns2, LayoutGrid, PanelBottom, PanelLeft, PanelRight, PanelRightClo
 import { ChatPanel } from '@renderer/components/ChatPanel'
 import { ControlBar } from '@renderer/components/ControlBar'
 import { MemberList } from '@renderer/components/MemberList'
-import { ProfileSheet } from '@renderer/components/ProfileSheet'
-import { SettingsSheet } from '@renderer/components/SettingsSheet'
+import { SettingsSheet, type SettingsSection } from '@renderer/components/SettingsSheet'
 import { SourcePickerModal } from '@renderer/components/SourcePickerModal'
 import { Stage, type CameraRail, type StageHandle } from '@renderer/components/Stage'
 import { type StageEntry } from '@renderer/components/StreamCard'
@@ -13,6 +12,7 @@ import { useChat } from '@renderer/hooks/useChat'
 import { IDLE_MS, useWindowActivity } from '@renderer/hooks/useIdle'
 import type { RoomController } from '@renderer/hooks/useRoom'
 import { canShareScreen, isMobile, useMobileLayout, useWakeLock } from '@renderer/lib/platform'
+import { clampVolume } from '@renderer/lib/playback'
 import type { CaptureSettings, ConnectionStatus, WebcamSettings } from '@renderer/types'
 
 const CAMERA_RAIL_KEY = 'screenshare.focus.cameras'
@@ -46,11 +46,12 @@ export function Room({ room }: { room: RoomController }) {
   const [picker, setPicker] = useState<'start' | 'swap' | null>(null)
   const [webcamOpen, setWebcamOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [profileOpen, setProfileOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('voice')
   const [layout, setLayout] = useState<'grid' | 'focus'>('grid')
   const [cameraRail, setCameraRail] = useState<CameraRail>(() => readCameraRail())
   const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile())
   const [sideTab, setSideTab] = useState<'room' | 'chat'>('room')
+  const [mixes, setMixes] = useState<Record<string, { volume: number; muted: boolean }>>({})
   const mobile = useMobileLayout()
   const facing = useRef<'user' | 'environment'>('user')
   useWakeLock(true)
@@ -117,9 +118,39 @@ export function Room({ room }: { room: RoomController }) {
     }
   }, [room.screenLive, room.publish, room.stopShare])
 
-  const modalOpen = picker !== null || webcamOpen || settingsOpen || profileOpen
+  const modalOpen = picker !== null || webcamOpen || settingsOpen
   // Só opacidade e pointer-events mudam: o espaço da dock se mantém, então o palco não é redimensionado.
   const dockVisible = useWindowActivity(IDLE_MS, !mobile && entries.length > 0 && !modalOpen)
+
+  function openSettings(section: SettingsSection): void {
+    setSettingsSection(section)
+    setSettingsOpen(true)
+  }
+
+  function updateMix(id: string, patch: { volume?: number; muted?: boolean }): void {
+    setMixes((current) => {
+      const previous = current[id] ?? { volume: 1, muted: false }
+      const next = { ...previous, ...patch }
+      if (patch.volume !== undefined) next.volume = clampVolume(patch.volume)
+      return { ...current, [id]: next }
+    })
+  }
+
+  const peopleCount = room.self ? room.peers.length + 1 : room.peers.length
+  const hasScreen = entries.some((entry) => entry.meta.streamType === 'screen')
+  const hasWebcam = entries.some((entry) => entry.meta.streamType === 'webcam')
+  const chat = room.self ? (
+    <ChatPanel
+      messages={room.chatMessages}
+      selfId={room.self.peerId}
+      selfName={room.profile.displayName || room.self.displayName}
+      selfProfile={room.profile}
+      peers={room.peers}
+      signalingUrl={room.signalingUrl}
+      connected={room.status === 'connected'}
+      onSend={room.sendChat}
+    />
+  ) : null
 
   function confirm(settings: CaptureSettings): void {
     setPicker(null)
@@ -168,8 +199,8 @@ export function Room({ room }: { room: RoomController }) {
           </button>
         </div>
       ) : null}
-      <div className={`room-chrome flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 ${mobile ? 'min-h-12 py-1' : 'h-9'}`}>
-        <div className="flex gap-1 rounded-lg bg-panel p-0.5 ring-1 ring-white/10">
+      <div className={`room-chrome flex shrink-0 items-center gap-2 border-b border-line px-3 ${mobile ? 'min-h-12 py-1' : 'h-9'}`}>
+        <div className="flex gap-0.5 rounded-lg bg-panel p-0.5 ring-1 ring-white/10">
           <button
             type="button"
             onClick={() => setLayout('grid')}
@@ -186,64 +217,69 @@ export function Room({ room }: { room: RoomController }) {
             <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
             Foco
           </button>
-          {layout === 'focus' && !mobile ? (
-            <div className="ml-1 flex gap-0.5">
-              {(
-                [
-                  ['bottom', PanelBottom, 'Câmeras embaixo'],
-                  ['left', PanelLeft, 'Câmeras à esquerda'],
-                  ['right', PanelRight, 'Câmeras à direita']
-                ] as const
-              ).map(([id, Icon, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  title={label}
-                  aria-label={label}
-                  aria-pressed={cameraRail === id}
-                  onClick={() => {
-                    setCameraRail(id)
-                    writeCameraRail(id)
-                  }}
-                  className={`inline-flex h-7 w-7 items-center justify-center rounded-md ${cameraRail === id ? 'bg-blurple text-white' : 'text-muted hover:text-ink'}`}
-                >
-                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
-        <div className="flex items-center gap-2">
-        {mobile ? null : (
+        {mobile ? <div className="min-w-0 flex-1" /> : (
           <>
-        <button
-          type="button"
-          disabled={entries.length === 0}
-          onClick={() => {
-            setLayout('grid')
-            stageRef.current?.organize('grid')
-          }}
-          title="Organizar grade"
-          className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted transition-all duration-200 ease-out hover:bg-panel hover:text-ink active:scale-95 disabled:opacity-40"
-        >
-          <WandSparkles className="h-3.5 w-3.5" aria-hidden="true" />
-          Organizar
-        </button>
-        {entries.some((entry) => entry.meta.streamType === 'screen') &&
-        entries.some((entry) => entry.meta.streamType === 'webcam') ? (
-          <button
-            type="button"
-            onClick={() => {
-              setLayout('grid')
-              stageRef.current?.organize('corner')
-            }}
-            title="Tela grande + webcam no canto"
-            className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted transition-all duration-200 ease-out hover:bg-panel hover:text-ink active:scale-95"
-          >
-            <PictureInPicture className="h-3.5 w-3.5" aria-hidden="true" />
-            Canto
-          </button>
-        ) : null}
+            <span className="h-4 w-px bg-white/10" aria-hidden="true" />
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              {layout === 'grid' ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={entries.length === 0}
+                    onClick={() => stageRef.current?.organize('grid')}
+                    title="Auto-organizar"
+                    className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                  >
+                    <WandSparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                    Auto-organizar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={entries.length === 0}
+                    onClick={() => stageRef.current?.organize('grid')}
+                    title="Lado a Lado"
+                    className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+                    Lado a Lado
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!hasScreen || !hasWebcam}
+                    onClick={() => stageRef.current?.organize('corner')}
+                    title="Destaque + Canto"
+                    className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                  >
+                    <PictureInPicture className="h-3.5 w-3.5" aria-hidden="true" />
+                    Destaque + Canto
+                  </button>
+                </>
+              ) : (
+                (
+                  [
+                    ['bottom', PanelBottom, 'Câmeras Embaixo'],
+                    ['left', PanelLeft, 'Câmeras à Esquerda'],
+                    ['right', PanelRight, 'Câmeras à Direita']
+                  ] as const
+                ).map(([id, Icon, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    title={label}
+                    aria-label={label}
+                    aria-pressed={cameraRail === id}
+                    onClick={() => {
+                      setCameraRail(id)
+                      writeCameraRail(id)
+                    }}
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md ${cameraRail === id ? 'bg-blurple text-white' : 'text-muted hover:text-ink'}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                ))
+              )}
+            </div>
           </>
         )}
         <button
@@ -251,12 +287,14 @@ export function Room({ room }: { room: RoomController }) {
           onClick={() => setSidebarOpen((open) => !open)}
           aria-pressed={sidebarOpen}
           title={sidebarOpen ? 'Recolher a lista da sala' : 'Mostrar a lista da sala'}
-          className={`inline-flex items-center gap-1 rounded-lg px-2 text-xs text-muted transition-all duration-200 ease-out hover:bg-panel hover:text-ink active:scale-95 ${mobile ? 'h-11' : 'h-8'}`}
+          className={`relative inline-flex items-center gap-1.5 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink ${mobile ? 'h-11' : 'h-8'}`}
         >
           {sidebarOpen ? <PanelRightClose className="h-4 w-4" aria-hidden="true" /> : <PanelRight className="h-4 w-4" aria-hidden="true" />}
-          {sidebarOpen ? 'Recolher' : 'Na sala'}
+          <span>{peopleCount}</span>
+          {unreadChat > 0 ? (
+            <span className="min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 text-white">{unreadChat > 99 ? '99+' : unreadChat}</span>
+          ) : null}
         </button>
-        </div>
       </div>
       <div className="flex min-h-0 flex-1">
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -269,6 +307,8 @@ export function Room({ room }: { room: RoomController }) {
                 cameraRail={cameraRail}
                 isolateAudio={room.isolateAudio}
                 audioRoute={room.audioRoute}
+                mixes={mixes}
+                onMix={updateMix}
                 onWatch={room.watch}
                 onUnwatch={room.unwatch}
                 onLayoutChange={setLayout}
@@ -286,13 +326,14 @@ export function Room({ room }: { room: RoomController }) {
             deafened={room.deafened}
             onToggleMic={() => void room.toggleMic()}
             onToggleDeafen={room.toggleDeafen}
+            onToggleSuppressor={(mode) => void room.applySuppressor(mode)}
             busy={room.busy}
             onShare={() => setPicker('start')}
             onSwap={() => setPicker('swap')}
             onStop={() => room.stopShare('screen')}
             onWebcam={() => (room.webcamLive ? room.stopShare('webcam') : setWebcamOpen(true))}
             onFlipCamera={flipCamera}
-            onSettings={() => setSettingsOpen(true)}
+            onSettings={() => openSettings(settingsSection)}
             onLeave={room.leave}
           />
           </div>
@@ -310,18 +351,13 @@ export function Room({ room }: { room: RoomController }) {
                   peers={room.peers}
                   onWatch={room.watch}
                   onUnwatch={room.unwatch}
-                  onEditSelf={() => setProfileOpen(true)}
+                  onEditSelf={() => openSettings('profile')}
+                  liveVolume={(streamId) => mixes[streamId]?.volume ?? 1}
+                  onLiveVolume={(streamId, volume) => updateMix(streamId, { volume })}
                   tab={sideTab}
                   onTab={setSideTab}
                   unread={unreadChat}
-                  chat={
-                    <ChatPanel
-                      messages={room.chatMessages}
-                      selfId={room.self.peerId}
-                      connected={room.status === 'connected'}
-                      onSend={room.sendChat}
-                    />
-                  }
+                  chat={chat}
                 />
               </div>
             </div>
@@ -335,18 +371,13 @@ export function Room({ room }: { room: RoomController }) {
             peers={room.peers}
             onWatch={room.watch}
             onUnwatch={room.unwatch}
-            onEditSelf={() => setProfileOpen(true)}
+            onEditSelf={() => openSettings('profile')}
+            liveVolume={(streamId) => mixes[streamId]?.volume ?? 1}
+            onLiveVolume={(streamId, volume) => updateMix(streamId, { volume })}
             tab={sideTab}
             onTab={setSideTab}
             unread={unreadChat}
-            chat={
-              <ChatPanel
-                messages={room.chatMessages}
-                selfId={room.self.peerId}
-                connected={room.status === 'connected'}
-                onSend={room.sendChat}
-              />
-            }
+            chat={chat}
           />
           </div>
           )
@@ -354,9 +385,16 @@ export function Room({ room }: { room: RoomController }) {
       </div>
       {picker && canShareScreen() ? <SourcePickerModal mode={picker} onClose={() => setPicker(null)} onConfirm={confirm} /> : null}
       {webcamOpen ? <WebcamSheet onClose={() => setWebcamOpen(false)} onConfirm={confirmWebcam} /> : null}
-      {settingsOpen ? <SettingsSheet onClose={() => setSettingsOpen(false)} /> : null}
-      {profileOpen ? (
-        <ProfileSheet profile={room.profile} onClose={() => setProfileOpen(false)} onSave={room.updateProfile} />
+      {settingsOpen ? (
+        <SettingsSheet
+          initialSection={settingsSection}
+          profile={room.profile}
+          voiceLive={room.voiceLive}
+          onApplyVoice={(mode) => void room.applySuppressor(mode)}
+          onSaveProfile={room.updateProfile}
+          onSection={setSettingsSection}
+          onClose={() => setSettingsOpen(false)}
+        />
       ) : null}
     </div>
   )

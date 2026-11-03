@@ -3,7 +3,7 @@
   "productName": "Concord",
   "description": "Transmissão de tela e webcam",
   "author": "Concord",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
@@ -19,6 +19,7 @@
     "dev:mobile": "vite --config vite.config.mobile.ts"
   },
   "dependencies": {
+    "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "discord-rpc": "^4.0.1",
     "electron-updater": "^6.8.11",
     "loopback-capture": "^3.0.2",

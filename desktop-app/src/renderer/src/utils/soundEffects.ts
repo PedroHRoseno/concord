@@ -7,14 +7,16 @@ export interface SoundPrefs {
 }
 
 let audio: AudioContext | null = null
+let previewing = false
 
 export function readSoundPrefs(): SoundPrefs {
   let enabled = true
-  let volume = 0.45
+  let volume = 0.8
   try {
     if (localStorage.getItem(ENABLED_KEY) === '0') enabled = false
-    const stored = Number(localStorage.getItem(VOLUME_KEY))
-    if (Number.isFinite(stored)) volume = Math.min(1, Math.max(0, stored))
+    const raw = localStorage.getItem(VOLUME_KEY)
+    const stored = Number(raw)
+    if (raw !== null && Number.isFinite(stored)) volume = Math.min(1, Math.max(0, stored))
   } catch {
     /* armazenamento indisponível */
   }
@@ -39,7 +41,8 @@ export function writeSoundVolume(volume: number): void {
 
 function context(): AudioContext | null {
   const prefs = readSoundPrefs()
-  if (!prefs.enabled || prefs.volume <= 0) return null
+  if (prefs.volume <= 0) return null
+  if (!previewing && !prefs.enabled) return null
   if (!audio) audio = new AudioContext()
   if (audio.state === 'suspended') void audio.resume()
   return audio
@@ -93,4 +96,20 @@ export function playViewerJoinedMyStreamSound(): void {
 export function playChatSound(): void {
   tone(880, 0, 0.07, 'sine', peak(0.08))
   tone(1175, 0.06, 0.1, 'sine', peak(0.07))
+}
+
+export type SoundPreview = 'join' | 'leave' | 'start' | 'stop' | 'viewer' | 'chat'
+
+export function previewSound(kind: SoundPreview): void {
+  previewing = true
+  try {
+    if (kind === 'join') playUserJoinSound()
+    else if (kind === 'leave') playUserLeaveSound()
+    else if (kind === 'start') playStreamStartSound()
+    else if (kind === 'stop') playStreamStopSound()
+    else if (kind === 'viewer') playViewerJoinedMyStreamSound()
+    else playChatSound()
+  } finally {
+    previewing = false
+  }
 }

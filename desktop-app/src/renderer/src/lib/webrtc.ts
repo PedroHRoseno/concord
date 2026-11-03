@@ -196,6 +196,25 @@ export class MeshSession {
     })
   }
 
+  /** Troca a track de voz sem parar o microfone cru nem renegociar a sala. */
+  async replaceVoiceTrack(stream: MediaStream): Promise<void> {
+    const streamId = streamIdFor(this.peerId, 'voice')
+    const pub = this.locals.get(streamId)
+    if (!pub) return
+    pub.gen += 1
+    pub.stream = stream
+    const audio = stream.getAudioTracks().find((track) => track.readyState === 'live') ?? null
+    for (const link of this.links.values()) {
+      if (link.role !== 'host' || link.streamId !== streamId || !link.audioSender || !audio) continue
+      try {
+        await link.audioSender.replaceTrack(audio)
+      } catch (error) {
+        console.warn('Falha ao trocar a voz.', error)
+      }
+    }
+    this.emitLocals()
+  }
+
   /** Ignora o fim da track atual para a troca de câmera no celular não derrubar o link. */
   prepareCameraSwap(streamType: StreamType): boolean {
     const current = this.locals.get(streamIdFor(this.peerId, streamType))

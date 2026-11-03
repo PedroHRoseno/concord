@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { useMobileLayout } from '@renderer/lib/platform'
+import { readWebcamDeviceId, writeWebcamDeviceId } from '@renderer/lib/capture-prefs'
 import type { WebcamSettings } from '@renderer/types'
 
 interface WebcamSheetProps {
@@ -31,7 +32,8 @@ export function WebcamSheet({ onClose, onConfirm }: WebcamSheetProps) {
           }))
         if (cancelled) return
         setDevices(cameras)
-        setDeviceId(cameras[0]?.deviceId ?? '')
+        const saved = readWebcamDeviceId()
+        setDeviceId(cameras.some((camera) => camera.deviceId === saved) ? saved : cameras[0]?.deviceId ?? '')
       } catch {
         if (!cancelled) setError('Não foi possível listar as câmeras.')
       }
@@ -50,6 +52,7 @@ export function WebcamSheet({ onClose, onConfirm }: WebcamSheetProps) {
         onClick={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault()
+          if (!mobile) writeWebcamDeviceId(deviceId)
           onConfirm({
             deviceId: mobile ? '' : deviceId,
             deviceLabel: mobile

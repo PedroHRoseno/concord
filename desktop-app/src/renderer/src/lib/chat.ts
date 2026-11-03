@@ -21,22 +21,49 @@ export function writePreviews(enabled: boolean): void {
   }
 }
 
-export type ChatPart =
-  | { kind: 'text'; value: string }
-  | { kind: 'link'; value: string; embed: 'image' | 'video' | null }
+export type LinkEmbed = 'image' | 'video' | 'youtube' | 'twitch' | 'page'
+
+export type ChatPart = { kind: 'text'; value: string } | { kind: 'link'; value: string; embed: LinkEmbed | null }
 
 const URL_RE = /https?:\/\/[^\s<>"']+/gi
 const TRAILING_RE = /[.,;:!?)\]]+$/
 
-function embedKind(url: string): 'image' | 'video' | null {
-  let path = url
+export function youtubeId(url: string): string | null {
   try {
-    path = new URL(url).pathname.toLowerCase()
+    const parsed = new URL(url)
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '')
+    if (host === 'youtu.be') {
+      const id = parsed.pathname.split('/').filter(Boolean)[0] ?? ''
+      return /^[\w-]{6,}$/.test(id) ? id : null
+    }
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com' || host === 'youtube-nocookie.com') {
+      if (parsed.pathname === '/watch') {
+        const id = parsed.searchParams.get('v') ?? ''
+        return /^[\w-]{6,}$/.test(id) ? id : null
+      }
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      if ((parts[0] === 'shorts' || parts[0] === 'embed' || parts[0] === 'live') && parts[1] && /^[\w-]{6,}$/.test(parts[1])) return parts[1]
+    }
   } catch {
     return null
   }
+  return null
+}
+
+export function linkEmbed(url: string): LinkEmbed | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  const path = parsed.pathname.toLowerCase()
   if (/\.(png|jpe?g|gif|webp)$/.test(path)) return 'image'
   if (/\.(mp4|webm)$/.test(path)) return 'video'
+  if (youtubeId(url)) return 'youtube'
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '')
+  if (host === 'twitch.tv' || host.endsWith('.twitch.tv')) return 'twitch'
+  if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return 'page'
   return null
 }
 
@@ -49,7 +76,7 @@ export function splitLinks(text: string): ChatPart[] {
     const trailing = TRAILING_RE.exec(url)?.[0] ?? ''
     if (trailing) url = url.slice(0, url.length - trailing.length)
     if (index > last) parts.push({ kind: 'text', value: text.slice(last, index) })
-    parts.push({ kind: 'link', value: url, embed: embedKind(url) })
+    parts.push({ kind: 'link', value: url, embed: linkEmbed(url) })
     last = index + url.length
   }
   if (last < text.length) parts.push({ kind: 'text', value: text.slice(last) })
@@ -63,6 +90,50 @@ export function openLink(url: string): void {
     return
   }
   window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+export interface UnfurlCard {
+  url: string
+  kind: 'youtube' | 'twitch' | 'image' | 'link'
+  title: string
+  description: string
+  image: string
+  siteName: string
+}
+
+const unfurlCache = new Map<string, Promise<UnfurlCard | null>>()
+
+export function fetchUnfurl(signalingUrl: string, target: string): Promise<UnfurlCard | null> {
+  const cached = unfurlCache.get(target)
+  if (cached) return cached
+  const pending = requestUnfurl(signalingUrl, target)
+  unfurlCache.set(target, pending)
+  return pending
+}
+
+async function requestUnfurl(signalingUrl: string, target: string): Promise<UnfurlCard | null> {
+  try {
+    const url = new URL(signalingUrl)
+    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+    url.pathname = '/unfurl'
+    url.search = ''
+    url.hash = ''
+    url.searchParams.set('url', target)
+    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(6000) })
+    if (!response.ok) return null
+    const data = (await response.json()) as Partial<UnfurlCard>
+    if (typeof data.title !== 'string' && typeof data.image !== 'string') return null
+    return {
+      url: target,
+      kind: data.kind === 'youtube' || data.kind === 'twitch' || data.kind === 'image' ? data.kind : 'link',
+      title: data.title ?? '',
+      description: data.description ?? '',
+      image: data.image ?? '',
+      siteName: data.siteName ?? ''
+    }
+  } catch {
+    return null
+  }
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {

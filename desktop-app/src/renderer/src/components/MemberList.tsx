@@ -1,5 +1,6 @@
-import { Monitor, Video, Volume2, VolumeX } from 'lucide-react'
+import { Eye, EyeOff, Monitor, MoreHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Avatar } from '@renderer/components/Avatar'
 import { setPeerMuted, setPeerVolume, usePeerPrefs } from '@renderer/lib/voice'
 import type { LocalPublication, PeerView, PublicProfile, StreamMeta, UserProfile } from '@renderer/types'
@@ -22,6 +23,8 @@ interface MemberListProps {
   onWatch: (streamId: string) => void
   onUnwatch: (streamId: string) => void
   onEditSelf: () => void
+  liveVolume: (streamId: string) => number
+  onLiveVolume: (streamId: string, volume: number) => void
   tab: 'room' | 'chat'
   onTab: (tab: 'room' | 'chat') => void
   unread: number
@@ -29,20 +32,14 @@ interface MemberListProps {
   sheet?: boolean
 }
 
-function VoiceControls({ name }: { name: string }) {
+function VoiceMenu({ name }: { name: string }) {
   const prefs = usePeerPrefs(name)
   return (
-    <div className="mt-2 flex items-center gap-2">
-      <button
-        type="button"
-        onClick={() => setPeerMuted(name, !prefs.muted)}
-        title={prefs.muted ? 'Reativar a voz' : 'Silenciar a voz (só para você)'}
-        aria-label={prefs.muted ? 'Reativar a voz' : 'Silenciar a voz'}
-        aria-pressed={prefs.muted}
-        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${prefs.muted ? 'bg-danger/20 text-danger' : 'text-muted hover:text-ink'}`}
-      >
-        {prefs.muted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
-      </button>
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs text-muted">
+        <span>Volume da voz</span>
+        <span>{Math.round(prefs.volume * 100)}%</span>
+      </div>
       <input
         type="range"
         min={0}
@@ -50,23 +47,26 @@ function VoiceControls({ name }: { name: string }) {
         value={Math.round(prefs.volume * 100)}
         disabled={prefs.muted}
         aria-label={`Volume da voz de ${name}`}
-        title={`Voz: ${Math.round(prefs.volume * 100)}%`}
         onChange={(event) => setPeerVolume(name, Number(event.target.value) / 100)}
-        className="min-w-0 flex-1 disabled:opacity-40"
+        className="w-full disabled:opacity-40"
       />
+      <label className="mt-2 flex items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          checked={prefs.muted}
+          onChange={(event) => setPeerMuted(name, event.target.checked)}
+          className="h-4 w-4 accent-blurple"
+        />
+        Mutar usuário
+      </label>
     </div>
   )
 }
 
-function sourceLine(meta: StreamMeta): string {
-  const resolution = meta.resolution === 'native' ? 'Nativa' : meta.resolution
-  return `${meta.sourceName} · ${resolution} ${meta.fps}fps`
-}
-
-function badge(meta: StreamMeta | undefined): { label: string; className: string } {
-  if (!meta) return { label: 'Na sala', className: 'bg-white/10 text-muted' }
-  if (meta.streamType === 'webcam') return { label: 'Webcam', className: 'bg-blurple/20 text-blurple' }
-  return { label: 'Ao vivo', className: 'bg-live/15 text-live' }
+interface MenuState {
+  peerId: string
+  x: number
+  y: number
 }
 
 const WIDTH_KEY = 'screenshare.sidebar.width'
@@ -90,6 +90,8 @@ export function MemberList({
   onWatch,
   onUnwatch,
   onEditSelf,
+  liveVolume,
+  onLiveVolume,
   tab,
   onTab,
   unread,
@@ -97,6 +99,7 @@ export function MemberList({
   sheet = false
 }: MemberListProps) {
   const [width, setWidth] = useState(readSidebarWidth)
+  const [menu, setMenu] = useState<MenuState | null>(null)
   const drag = useRef<{ x: number; width: number } | null>(null)
 
   useEffect(() => {
@@ -111,6 +114,36 @@ export function MemberList({
     const current = drag.current
     if (!current) return
     setWidth(Math.min(450, Math.max(200, current.width + (current.x - event.clientX))))
+  }
+
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
+
+  function openMenu(person: Person, x: number, y: number): void {
+    if (person.self) {
+      onEditSelf()
+      return
+    }
+    const live = person.streams.some((item) => item.meta.streamType === 'screen' || item.meta.streamType === 'webcam')
+    if (!person.hasVoice && !live) return
+    const widthPx = 256
+    const heightPx = 280
+    setMenu({
+      peerId: person.peerId,
+      x: Math.max(8, Math.min(x, window.innerWidth - widthPx - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - heightPx - 8))
+    })
   }
   const people: Person[] = [
     {
@@ -179,77 +212,137 @@ export function MemberList({
         ))}
       </div>
       {tab === 'chat' ? chat : null}
-      <ul className={`min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3 ${tab === 'room' ? '' : 'hidden'}`}>
+      <ul className={`min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 pb-3 ${tab === 'room' ? '' : 'hidden'}`}>
         {people.map((person) => {
           const screen = person.streams.find((item) => item.meta.streamType === 'screen')
           const webcam = person.streams.find((item) => item.meta.streamType === 'webcam')
-          const primary = badge(screen?.meta ?? webcam?.meta)
+          const liveStreams = person.streams.filter((item) => item.meta.streamType === 'screen' || item.meta.streamType === 'webcam')
+          const liveLevel = screen ? liveVolume(screen.meta.streamId) : webcam ? liveVolume(webcam.meta.streamId) : 1
           return (
-            <li key={person.peerId} className="rounded-xl bg-app px-3 py-3 transition-all duration-200 ease-out">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2 text-left">
-                  <Avatar
-                    name={person.name}
-                    src={person.profile.avatarDataUrl}
-                    accent={person.profile.accentColor}
-                    live={Boolean(screen || webcam)}
-                    peerId={person.peerId}
-                    size="sm"
-                  />
-                  <span className="min-w-0">
-                    {person.self ? (
-                      <button type="button" onClick={onEditSelf} className="block max-w-full truncate text-left text-sm font-semibold text-ink" title="Editar perfil">
-                        {person.name} (você)
-                      </button>
-                    ) : (
-                      <p className="truncate text-sm font-semibold text-ink">{person.name}</p>
-                    )}
-                    {person.profile.customStatus ? <p className="truncate text-xs text-muted">{person.profile.customStatus}</p> : null}
-                  </span>
-                </div>
-                <span className="flex shrink-0 gap-1">
-                  {screen ? (
-                    <span className="rounded-full bg-live/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-live">Ao vivo</span>
-                  ) : null}
-                  {webcam ? (
-                    <span className="rounded-full bg-blurple/20 px-2 py-0.5 text-[10px] font-semibold uppercase text-blurple">Webcam</span>
-                  ) : null}
-                  {!screen && !webcam ? (
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${primary.className}`}>{primary.label}</span>
+            <li
+              key={person.peerId}
+              className="group rounded-lg px-2 py-1.5 hover:bg-white/[0.04]"
+              onContextMenu={(event) => {
+                event.preventDefault()
+                openMenu(person, event.clientX, event.clientY)
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Avatar
+                  name={person.name}
+                  src={person.profile.avatarDataUrl}
+                  accent={person.profile.accentColor}
+                  live={Boolean(screen || webcam)}
+                  peerId={person.peerId}
+                  size="sm"
+                />
+                <span className="min-w-0 flex-1">
+                  {person.self ? (
+                    <button type="button" onClick={onEditSelf} className="block max-w-full truncate text-left text-sm font-semibold text-ink" title="Editar perfil">
+                      {person.name}
+                    </button>
+                  ) : (
+                    <p className="truncate text-sm font-semibold text-ink">{person.name}</p>
+                  )}
+                  {person.profile.customStatus ? <p className="truncate text-xs text-muted">{person.profile.customStatus}</p> : null}
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  {screen ? <span className="rounded bg-live/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-live">AO VIVO</span> : null}
+                  {webcam ? <span className="rounded bg-blurple/20 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-blurple">CÂMERA</span> : null}
+                  {!person.self && (person.hasVoice || liveStreams.length > 0) ? (
+                    <button
+                      type="button"
+                      title="Opções"
+                      aria-label={`Opções de ${person.name}`}
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        openMenu(person, rect.left, rect.bottom + 4)
+                      }}
+                      className={`inline-flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-white/10 hover:text-ink ${sheet ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
                   ) : null}
                 </span>
               </div>
               {screen ? (
-                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted" title={sourceLine(screen.meta)}>
+                <div className="mt-1 flex items-center gap-1.5 pl-9 text-xs text-muted">
                   <Monitor className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{sourceLine(screen.meta)}</span>
-                </p>
-              ) : null}
-              {webcam ? (
-                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted" title={sourceLine(webcam.meta)}>
-                  <Video className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{sourceLine(webcam.meta)}</span>
-                </p>
-              ) : null}
-              {!person.self && person.hasVoice ? <VoiceControls name={person.name} /> : null}
-              {!person.self && screen ? (
-                <button
-                  type="button"
-                  onClick={() => (screen.watching ? onUnwatch(screen.meta.streamId) : onWatch(screen.meta.streamId))}
-                  className={`mt-2 w-full rounded-lg px-2 font-semibold transition-all duration-200 ease-out active:scale-95 ${sheet ? 'min-h-11 text-sm' : 'py-1.5 text-xs'} ${screen.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
-                >
-                  {screen.watching ? 'Deixar live' : 'Assistir live'}
-                </button>
+                  <span className="min-w-0 flex-1 truncate">{screen.meta.sourceName}</span>
+                  {!person.self ? (
+                    <button
+                      type="button"
+                      onClick={() => (screen.watching ? onUnwatch(screen.meta.streamId) : onWatch(screen.meta.streamId))}
+                      className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-ink hover:bg-white/15"
+                    >
+                      {screen.watching ? 'Sair' : 'Assistir'}
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
               {!person.self && webcam ? (
-                <button
-                  type="button"
-                  onClick={() => (webcam.watching ? onUnwatch(webcam.meta.streamId) : onWatch(webcam.meta.streamId))}
-                  className={`mt-2 w-full rounded-lg px-2 font-semibold transition-all duration-200 ease-out active:scale-95 ${sheet ? 'min-h-11 text-sm' : 'py-1.5 text-xs'} ${webcam.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
-                >
-                  {webcam.watching ? 'Ocultar câmera' : 'Ver câmera'}
-                </button>
+                <div className="mt-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => (webcam.watching ? onUnwatch(webcam.meta.streamId) : onWatch(webcam.meta.streamId))}
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-muted hover:bg-white/10 hover:text-ink"
+                  >
+                    {webcam.watching ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                    {webcam.watching ? 'Ocultar' : 'Ver'}
+                  </button>
+                </div>
               ) : null}
+              {menu?.peerId === person.peerId
+                ? createPortal(
+                    <div
+                      className="fixed z-[9999] w-64 rounded-lg bg-[#111214] p-3 text-ink shadow-2xl ring-1 ring-white/10"
+                      style={{ left: menu.x, top: menu.y }}
+                      onMouseDown={(event) => event.stopPropagation()}
+                    >
+                      <p className="mb-2 truncate text-sm font-semibold">{person.name}</p>
+                      {person.hasVoice ? <VoiceMenu name={person.name} /> : null}
+                      {liveStreams.length > 0 ? (
+                        <label className="mt-3 block text-xs text-muted">
+                          <span className="mb-1 flex items-center justify-between">
+                            Volume da live
+                            <span>{Math.round(liveLevel * 100)}%</span>
+                          </span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={300}
+                            value={Math.round(liveLevel * 100)}
+                            aria-label={`Volume da live de ${person.name}`}
+                            onChange={(event) => {
+                              const volume = Number(event.target.value) / 100
+                              for (const stream of liveStreams) onLiveVolume(stream.meta.streamId, volume)
+                            }}
+                            className="w-full"
+                          />
+                        </label>
+                      ) : null}
+                      {screen ? (
+                        <button
+                          type="button"
+                          onClick={() => (screen.watching ? onUnwatch(screen.meta.streamId) : onWatch(screen.meta.streamId))}
+                          className="mt-3 h-8 w-full rounded-md bg-white/10 text-xs font-semibold hover:bg-white/15"
+                        >
+                          {screen.watching ? 'Deixar live' : 'Assistir live'}
+                        </button>
+                      ) : null}
+                      {webcam ? (
+                        <button
+                          type="button"
+                          onClick={() => (webcam.watching ? onUnwatch(webcam.meta.streamId) : onWatch(webcam.meta.streamId))}
+                          className="mt-2 h-8 w-full rounded-md bg-white/10 text-xs font-semibold hover:bg-white/15"
+                        >
+                          {webcam.watching ? 'Ocultar câmera' : 'Ver câmera'}
+                        </button>
+                      ) : null}
+                    </div>,
+                    document.body
+                  )
+                : null}
             </li>
           )
         })}
