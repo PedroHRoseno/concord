@@ -1,3 +1,4 @@
+import { isMobile } from '@renderer/lib/platform'
 import { RESOLUTION_OPTIONS, type CaptureSettings, type WebcamSettings } from '@renderer/types'
 import { attachDesktopAudio, stopDesktopAudio } from '@renderer/lib/audio-loopback'
 
@@ -141,23 +142,23 @@ export async function captureDesktop(settings: CaptureSettings): Promise<MediaSt
 }
 
 export async function captureWebcam(settings: WebcamSettings): Promise<MediaStream> {
-  const height = settings.resolution === '1080p' ? 1080 : 720
-  const width = settings.resolution === '1080p' ? 1920 : 1280
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      deviceId: settings.deviceId ? { exact: settings.deviceId } : undefined,
-      width: { ideal: width },
-      height: { ideal: height },
-      frameRate: { ideal: 30, max: 30 }
-    }
-  })
-  const video = stream.getVideoTracks()[0]
-  if (!video) {
-    stream.getTracks().forEach((track) => track.stop())
+  const mobile = isMobile()
+  const height = !mobile && settings.resolution === '1080p' ? 1080 : 720
+  const width = !mobile && settings.resolution === '1080p' ? 1920 : 1280
+  const video: MediaTrackConstraints = {
+    width: { ideal: width },
+    height: { ideal: height },
+    frameRate: { ideal: 30, max: 30 }
+  }
+  if (settings.facingMode) video.facingMode = { ideal: settings.facingMode }
+  else if (settings.deviceId) video.deviceId = { exact: settings.deviceId }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video })
+  const track = stream.getVideoTracks()[0]
+  if (!track) {
+    stream.getTracks().forEach((item) => item.stop())
     throw new Error('A câmera não devolveu vídeo.')
   }
-  video.contentHint = 'detail'
+  track.contentHint = 'detail'
   return stream
 }
 

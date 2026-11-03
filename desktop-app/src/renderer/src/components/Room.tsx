@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Columns2, LayoutGrid, PanelBottom, PanelLeft, PanelRight, PanelRightClose, PictureInPicture, WandSparkles } from 'lucide-react'
+import { ChatPanel } from '@renderer/components/ChatPanel'
 import { ControlBar } from '@renderer/components/ControlBar'
 import { MemberList } from '@renderer/components/MemberList'
 import { ProfileSheet } from '@renderer/components/ProfileSheet'
@@ -8,9 +9,11 @@ import { SourcePickerModal } from '@renderer/components/SourcePickerModal'
 import { Stage, type CameraRail, type StageHandle } from '@renderer/components/Stage'
 import { type StageEntry } from '@renderer/components/StreamCard'
 import { WebcamSheet } from '@renderer/components/WebcamSheet'
+import { useChat } from '@renderer/hooks/useChat'
 import { IDLE_MS, useWindowActivity } from '@renderer/hooks/useIdle'
 import type { RoomController } from '@renderer/hooks/useRoom'
-import type { CaptureSettings, WebcamSettings } from '@renderer/types'
+import { canShareScreen, isMobile, useMobileLayout, useWakeLock } from '@renderer/lib/platform'
+import type { CaptureSettings, ConnectionStatus, WebcamSettings } from '@renderer/types'
 
 const CAMERA_RAIL_KEY = 'screenshare.focus.cameras'
 
@@ -32,6 +35,13 @@ function writeCameraRail(value: CameraRail): void {
   }
 }
 
+const STATUS_LABEL: Record<ConnectionStatus, string> = {
+  connecting: 'Conectando',
+  connected: 'Conectado',
+  reconnecting: 'Reconectando',
+  disconnected: 'Desconectado'
+}
+
 export function Room({ room }: { room: RoomController }) {
   const [picker, setPicker] = useState<'start' | 'swap' | null>(null)
   const [webcamOpen, setWebcamOpen] = useState(false)
@@ -39,7 +49,16 @@ export function Room({ room }: { room: RoomController }) {
   const [profileOpen, setProfileOpen] = useState(false)
   const [layout, setLayout] = useState<'grid' | 'focus'>('grid')
   const [cameraRail, setCameraRail] = useState<CameraRail>(() => readCameraRail())
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(() => !isMobile())
+  const [sideTab, setSideTab] = useState<'room' | 'chat'>('room')
+  const mobile = useMobileLayout()
+  const facing = useRef<'user' | 'environment'>('user')
+  useWakeLock(true)
+  const unreadChat = useChat(room.chatMessages, room.self?.peerId ?? '', sidebarOpen && sideTab === 'chat')
+
+  useEffect(() => {
+    if (mobile) setSidebarOpen(false)
+  }, [mobile])
   const stageRef = useRef<StageHandle>(null)
   const entries: StageEntry[] = []
 
@@ -100,7 +119,7 @@ export function Room({ room }: { room: RoomController }) {
 
   const modalOpen = picker !== null || webcamOpen || settingsOpen || profileOpen
   // Só opacidade e pointer-events mudam: o espaço da dock se mantém, então o palco não é redimensionado.
-  const dockVisible = useWindowActivity(IDLE_MS, entries.length > 0 && !modalOpen)
+  const dockVisible = useWindowActivity(IDLE_MS, !mobile && entries.length > 0 && !modalOpen)
 
   function confirm(settings: CaptureSettings): void {
     setPicker(null)
@@ -109,11 +128,28 @@ export function Room({ room }: { room: RoomController }) {
 
   function confirmWebcam(settings: WebcamSettings): void {
     setWebcamOpen(false)
+    if (settings.facingMode) facing.current = settings.facingMode
     void room.publishWebcam(settings)
+  }
+
+  function flipCamera(): void {
+    const next = facing.current === 'user' ? 'environment' : 'user'
+    facing.current = next
+    void room.publishWebcam({
+      deviceId: '',
+      deviceLabel: next === 'environment' ? 'Câmera traseira' : 'Câmera frontal',
+      resolution: '720p',
+      facingMode: next
+    })
   }
 
   return (
     <div className="relative flex h-full flex-col bg-app text-ink">
+      {mobile && room.status !== 'connected' ? (
+        <p className="bg-warn/15 px-4 py-2 text-sm text-ink" role="status">
+          {STATUS_LABEL[room.status]}
+        </p>
+      ) : null}
       {room.audioWarning ? (
         <p className="bg-warn/15 px-4 py-2 text-sm text-warn" role="status">
           {room.audioWarning}
@@ -132,12 +168,12 @@ export function Room({ room }: { room: RoomController }) {
           </button>
         </div>
       ) : null}
-      <div className="room-chrome flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line px-3">
+      <div className={`room-chrome flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 ${mobile ? 'min-h-12 py-1' : 'h-9'}`}>
         <div className="flex gap-1 rounded-lg bg-panel p-0.5 ring-1 ring-white/10">
           <button
             type="button"
             onClick={() => setLayout('grid')}
-            className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs ${layout === 'grid' ? 'bg-blurple text-white' : 'text-muted'}`}
+            className={`inline-flex items-center gap-1 rounded-md px-2 text-xs ${mobile ? 'h-11' : 'h-7'} ${layout === 'grid' ? 'bg-blurple text-white' : 'text-muted'}`}
           >
             <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
             Grade
@@ -145,12 +181,12 @@ export function Room({ room }: { room: RoomController }) {
           <button
             type="button"
             onClick={() => setLayout('focus')}
-            className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs ${layout === 'focus' ? 'bg-blurple text-white' : 'text-muted'}`}
+            className={`inline-flex items-center gap-1 rounded-md px-2 text-xs ${mobile ? 'h-11' : 'h-7'} ${layout === 'focus' ? 'bg-blurple text-white' : 'text-muted'}`}
           >
             <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
             Foco
           </button>
-          {layout === 'focus' ? (
+          {layout === 'focus' && !mobile ? (
             <div className="ml-1 flex gap-0.5">
               {(
                 [
@@ -178,6 +214,8 @@ export function Room({ room }: { room: RoomController }) {
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+        {mobile ? null : (
+          <>
         <button
           type="button"
           disabled={entries.length === 0}
@@ -206,12 +244,14 @@ export function Room({ room }: { room: RoomController }) {
             Canto
           </button>
         ) : null}
+          </>
+        )}
         <button
           type="button"
           onClick={() => setSidebarOpen((open) => !open)}
           aria-pressed={sidebarOpen}
           title={sidebarOpen ? 'Recolher a lista da sala' : 'Mostrar a lista da sala'}
-          className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs text-muted transition-all duration-200 ease-out hover:bg-panel hover:text-ink active:scale-95"
+          className={`inline-flex items-center gap-1 rounded-lg px-2 text-xs text-muted transition-all duration-200 ease-out hover:bg-panel hover:text-ink active:scale-95 ${mobile ? 'h-11' : 'h-8'}`}
         >
           {sidebarOpen ? <PanelRightClose className="h-4 w-4" aria-hidden="true" /> : <PanelRight className="h-4 w-4" aria-hidden="true" />}
           {sidebarOpen ? 'Recolher' : 'Na sala'}
@@ -242,17 +282,50 @@ export function Room({ room }: { room: RoomController }) {
           <ControlBar
             sharing={room.screenLive}
             webcamLive={room.webcamLive}
+            micOn={room.micOn}
+            deafened={room.deafened}
+            onToggleMic={() => void room.toggleMic()}
+            onToggleDeafen={room.toggleDeafen}
             busy={room.busy}
             onShare={() => setPicker('start')}
             onSwap={() => setPicker('swap')}
             onStop={() => room.stopShare('screen')}
             onWebcam={() => (room.webcamLive ? room.stopShare('webcam') : setWebcamOpen(true))}
+            onFlipCamera={flipCamera}
             onSettings={() => setSettingsOpen(true)}
             onLeave={room.leave}
           />
           </div>
         </main>
         {sidebarOpen && room.self ? (
+          mobile ? (
+            <div className="fixed inset-0 z-40 flex items-end bg-black/50" onClick={() => setSidebarOpen(false)}>
+              <div className="flex max-h-[78vh] w-full" onClick={(event) => event.stopPropagation()}>
+                <MemberList
+                  sheet
+                  selfName={room.profile.displayName || room.self.displayName}
+                  selfId={room.self.peerId}
+                  selfProfile={room.profile}
+                  locals={room.locals}
+                  peers={room.peers}
+                  onWatch={room.watch}
+                  onUnwatch={room.unwatch}
+                  onEditSelf={() => setProfileOpen(true)}
+                  tab={sideTab}
+                  onTab={setSideTab}
+                  unread={unreadChat}
+                  chat={
+                    <ChatPanel
+                      messages={room.chatMessages}
+                      selfId={room.self.peerId}
+                      connected={room.status === 'connected'}
+                      onSend={room.sendChat}
+                    />
+                  }
+                />
+              </div>
+            </div>
+          ) : (
           <div className="room-chrome contents">
           <MemberList
             selfName={room.profile.displayName || room.self.displayName}
@@ -263,11 +336,23 @@ export function Room({ room }: { room: RoomController }) {
             onWatch={room.watch}
             onUnwatch={room.unwatch}
             onEditSelf={() => setProfileOpen(true)}
+            tab={sideTab}
+            onTab={setSideTab}
+            unread={unreadChat}
+            chat={
+              <ChatPanel
+                messages={room.chatMessages}
+                selfId={room.self.peerId}
+                connected={room.status === 'connected'}
+                onSend={room.sendChat}
+              />
+            }
           />
           </div>
+          )
         ) : null}
       </div>
-      {picker ? <SourcePickerModal mode={picker} onClose={() => setPicker(null)} onConfirm={confirm} /> : null}
+      {picker && canShareScreen() ? <SourcePickerModal mode={picker} onClose={() => setPicker(null)} onConfirm={confirm} /> : null}
       {webcamOpen ? <WebcamSheet onClose={() => setWebcamOpen(false)} onConfirm={confirmWebcam} /> : null}
       {settingsOpen ? <SettingsSheet onClose={() => setSettingsOpen(false)} /> : null}
       {profileOpen ? (

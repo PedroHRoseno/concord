@@ -12,6 +12,12 @@ interface QuickShareSettings {
   contentHint: 'motion' | 'detail'
 }
 
+interface HotkeyMap {
+  share: string
+  mute: string
+  deafen: string
+}
+
 interface UpdateStatus {
   phase: 'idle' | 'checking' | 'available' | 'current' | 'downloading' | 'ready' | 'error'
   current?: string
@@ -71,6 +77,25 @@ const api = {
   getOsUsername: (): Promise<string> => ipcRenderer.invoke('os:username'),
   getHotkey: (): Promise<string> => ipcRenderer.invoke('hotkey:get'),
   setHotkey: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('hotkey:set', accelerator),
+  getHotkeys: (): Promise<HotkeyMap> => ipcRenderer.invoke('hotkey:get-all'),
+  setHotkeyFor: (action: 'share' | 'mute' | 'deafen', accelerator: string): Promise<boolean> =>
+    ipcRenderer.invoke('hotkey:set-action', action, accelerator),
+  onHotkeys: (listener: (map: HotkeyMap) => void): (() => void) => {
+    const wrapped = (_event: IpcRendererEvent, map: HotkeyMap): void => listener(map)
+    ipcRenderer.on('hotkey:all-changed', wrapped)
+    return () => ipcRenderer.removeListener('hotkey:all-changed', wrapped)
+  },
+  onVoiceToggleMute: (listener: () => void): (() => void) => {
+    const wrapped = (): void => listener()
+    ipcRenderer.on('voice:toggle-mute', wrapped)
+    return () => ipcRenderer.removeListener('voice:toggle-mute', wrapped)
+  },
+  onVoiceToggleDeafen: (listener: () => void): (() => void) => {
+    const wrapped = (): void => listener()
+    ipcRenderer.on('voice:toggle-deafen', wrapped)
+    return () => ipcRenderer.removeListener('voice:toggle-deafen', wrapped)
+  },
+  openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('shell:open-external', url),
   onHotkey: (listener: (accelerator: string) => void): (() => void) => {
     const wrapped = (_event: IpcRendererEvent, accelerator: string): void => listener(accelerator)
     ipcRenderer.on('hotkey:changed', wrapped)

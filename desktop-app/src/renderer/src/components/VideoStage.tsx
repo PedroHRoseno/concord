@@ -12,6 +12,7 @@ import {
   Volume2,
   VolumeX
 } from 'lucide-react'
+import { isMobile } from '@renderer/lib/platform'
 import { readStreamStats, type StreamStats } from '@renderer/lib/stats'
 import { StatsOverlay } from '@renderer/components/StatsOverlay'
 import {
@@ -392,6 +393,10 @@ export function VideoStage({
     const active = fullscreen || tile.dataset.present === 'fullscreen' || document.fullscreenElement === node
     if (active) {
       await leaveFullscreen()
+      return
+    }
+    if (isMobile()) {
+      await enterCssFullscreen(node)
       return
     }
     // A Promise de requestFullscreen() fica pendente (sem resolver nem rejeitar) quando a permissão é negada.

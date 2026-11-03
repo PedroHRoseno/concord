@@ -129,7 +129,7 @@ export function StreamCard({
       >
         <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 shadow-md backdrop-blur-md">
           <GripHorizontal className="h-4 w-4 shrink-0 text-white/80" aria-hidden="true" />
-          <Avatar name={entry.name} src={entry.avatarDataUrl} accent={entry.accentColor} live size="sm" />
+          <Avatar name={entry.name} src={entry.avatarDataUrl} accent={entry.accentColor} live size="sm" peerId={entry.peerId} />
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{label}</h2>
         </span>
         <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-live shadow-md backdrop-blur-md">

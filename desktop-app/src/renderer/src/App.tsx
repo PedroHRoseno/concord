@@ -1,15 +1,17 @@
 import { useEffect } from 'react'
+import { AndroidUpdateNotice } from '@renderer/components/ApkRelease'
 import { Lobby } from '@renderer/components/Lobby'
 import { QuickShare } from '@renderer/components/QuickShare'
 import { Room } from '@renderer/components/Room'
 import { Titlebar } from '@renderer/components/Titlebar'
 import { useRoom } from '@renderer/hooks/useRoom'
 import { readDiscordClientId } from '@renderer/lib/playback'
+import { canShareScreen } from '@renderer/lib/platform'
 
 const pickerOnly = new URLSearchParams(window.location.search).get('view') === 'picker'
 
 export default function App() {
-  if (pickerOnly) return <QuickShare />
+  if (pickerOnly) return canShareScreen() ? <QuickShare /> : null
   return <MainApp />
 }
 
@@ -41,6 +43,7 @@ function MainApp() {
 
   return (
     <div className="flex h-full flex-col bg-app text-ink">
+      <AndroidUpdateNotice />
       <Titlebar
         status={room.phase === 'room' ? room.status : undefined}
         roomId={room.phase === 'room' ? room.self?.roomId : undefined}

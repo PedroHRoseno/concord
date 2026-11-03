@@ -1,0 +1,21 @@
+{
+  "name": "concord-mobile",
+  "private": true,
+  "version": "1.6.0",
+  "description": "App Android do Concord. O Capacitor fica fora das dependências do Electron.",
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:mobile -w concord && cap sync android",
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.0",
+    "typescript": "^5.9.3"
+  }
+}

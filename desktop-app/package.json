@@ -3,7 +3,7 @@
   "productName": "Concord",
   "description": "Transmissão de tela e webcam",
   "author": "Concord",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
@@ -14,7 +14,9 @@
     "publish:win": "node scripts/run.mjs build && node scripts/icon.mjs && electron-builder --win --publish always --config electron-builder.yml",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build:mobile": "vite build --config vite.config.mobile.ts",
+    "dev:mobile": "vite --config vite.config.mobile.ts"
   },
   "dependencies": {
     "discord-rpc": "^4.0.1",

@@ -8,10 +8,13 @@ import {
   systemAudioWarning
 } from '@renderer/lib/capture'
 import { normalizeTurn } from '@renderer/lib/ice'
+import { isMobile } from '@renderer/lib/platform'
+import { attachLocalMeter, closeVoice, detachLocalMeter, openMic, setDeafened } from '@renderer/lib/voice'
 import { publicProfileOf, readProfile, writeProfile } from '@renderer/lib/profile'
 import { MeshSession } from '@renderer/lib/webrtc'
 import type {
   CaptureSettings,
+  ChatMessage,
   ConnectionStatus,
   LobbyInput,
   LocalPublication,
@@ -52,15 +55,26 @@ function validateLobby(input: LobbyInput): string | null {
   return null
 }
 
+function micErrorMessage(error: unknown): string {
+  if (error instanceof DOMException && error.name === 'NotAllowedError') {
+    return 'O acesso ao microfone foi bloqueado pelo sistema.'
+  }
+  if (error instanceof DOMException && error.name === 'NotFoundError') {
+    return 'Nenhum microfone foi encontrado.'
+  }
+  if (error instanceof Error && error.message) return error.message
+  return 'Não foi possível abrir o microfone.'
+}
+
 function webcamAsCapture(settings: WebcamSettings): CaptureSettings {
   return {
     sourceId: settings.deviceId || 'webcam',
     sourceName: settings.deviceLabel || 'Webcam',
     audioMode: 'none',
     audioDeviceId: '',
-    resolution: settings.resolution,
+    resolution: isMobile() ? '720p' : settings.resolution,
     fps: 30,
-    maxBitrate: 4_000_000,
+    maxBitrate: isMobile() ? 2_000_000 : 4_000_000,
     audioBitrate: 128_000,
     contentHint: 'detail'
   }
@@ -77,14 +91,95 @@ export function useRoom() {
   const [error, setError] = useState<string | null>(null)
   const [audioWarning, setAudioWarning] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const localsRef = useRef(locals)
   const [audioRoute, setAudioRoute] = useState<DesktopAudioRoute>('none')
+  const [voiceLive, setVoiceLive] = useState(false)
+  const [micOn, setMicOn] = useState(false)
+  const [deafened, setDeafenedState] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const micRef = useRef(false)
+  const deafRef = useRef(false)
+  const micBeforeDeafRef = useRef(false)
+  const voiceLiveRef = useRef(false)
+  const selfIdRef = useRef('')
   const isolateAudio = audioRoute === 'system'
+  localsRef.current = locals
 
   useEffect(() => {
     return () => {
       sessionRef.current?.dispose()
       sessionRef.current = null
+      closeVoice()
     }
+  }, [])
+
+  const resetVoice = useCallback(() => {
+    detachLocalMeter()
+    closeVoice()
+    micRef.current = false
+    deafRef.current = false
+    micBeforeDeafRef.current = false
+    voiceLiveRef.current = false
+    setVoiceLive(false)
+    setMicOn(false)
+    setDeafenedState(false)
+  }, [])
+
+  const applyMic = useCallback((on: boolean) => {
+    micRef.current = on
+    setMicOn(on)
+    sessionRef.current?.setVoiceEnabled(on)
+  }, [])
+
+  const toggleMic = useCallback(async () => {
+    const session = sessionRef.current
+    if (!session) return
+    if (deafRef.current) {
+      // Ligar o microfone com o fone mudo também reativa o áudio, como no Discord.
+      deafRef.current = false
+      setDeafenedState(false)
+      setDeafened(false)
+    }
+    if (!voiceLiveRef.current) {
+      try {
+        const stream = await openMic()
+        await session.publishVoice(stream)
+        voiceLiveRef.current = true
+        setVoiceLive(true)
+        attachLocalMeter(selfIdRef.current, stream)
+        applyMic(true)
+      } catch (caught) {
+        setError(micErrorMessage(caught))
+      }
+      return
+    }
+    applyMic(!micRef.current)
+  }, [applyMic])
+
+  const toggleDeafen = useCallback(() => {
+    const next = !deafRef.current
+    deafRef.current = next
+    setDeafenedState(next)
+    setDeafened(next)
+    if (next) {
+      micBeforeDeafRef.current = micRef.current
+      if (micRef.current) applyMic(false)
+    } else if (micBeforeDeafRef.current && voiceLiveRef.current) {
+      applyMic(true)
+    }
+  }, [applyMic])
+
+  useEffect(() => {
+    const stopMute = window.electronAPI?.onVoiceToggleMute?.(() => void toggleMic())
+    const stopDeafen = window.electronAPI?.onVoiceToggleDeafen?.(() => toggleDeafen())
+    return () => {
+      stopMute?.()
+      stopDeafen?.()
+    }
+  }, [toggleMic, toggleDeafen])
+
+  const sendChat = useCallback((text: string, image?: string) => {
+    sessionRef.current?.sendChat(text, image)
   }, [])
 
   const join = useCallback((input: LobbyInput) => {
@@ -115,9 +210,21 @@ export function useRoom() {
           }
           setLocals(publications)
         },
-        onError: setError
+        onError: setError,
+        onChat: (message) =>
+          setChatMessages((current) =>
+            current.some((item) => item.id === message.id) ? current : [...current, message].slice(-300)
+          ),
+        onChatHistory: (messages) =>
+          setChatMessages((current) => {
+            const known = new Set(messages.map((item) => item.id))
+            return [...messages, ...current.filter((item) => !known.has(item.id))].slice(-300)
+          })
       }
     })
+    resetVoice()
+    selfIdRef.current = peerId
+    setChatMessages([])
     sessionRef.current = session
     setProfile(saved)
     setSelf({ peerId, displayName, roomId })
@@ -128,11 +235,13 @@ export function useRoom() {
     setError(null)
     setPhase('room')
     session.start()
-  }, [])
+  }, [resetVoice])
 
   const leave = useCallback(() => {
     sessionRef.current?.dispose()
     sessionRef.current = null
+    resetVoice()
+    setChatMessages([])
     releaseSystemAudioAnchor()
     setPhase('lobby')
     setPeers([])
@@ -148,7 +257,7 @@ export function useRoom() {
     } catch {
       // O lobby segue visível mesmo se o navegador bloquear a sessão.
     }
-  }, [])
+  }, [resetVoice])
 
   const publish = useCallback(async (settings: CaptureSettings) => {
     const session = sessionRef.current
@@ -177,11 +286,19 @@ export function useRoom() {
     setBusy(true)
     setError(null)
     let stream: MediaStream | null = null
+    const swapping = isMobile() && localsRef.current.some((item) => item.meta.streamType === 'webcam')
+    if (swapping) {
+      session.prepareCameraSwap('webcam')
+      for (const publication of localsRef.current) {
+        if (publication.meta.streamType === 'webcam') publication.media.getTracks().forEach((track) => track.stop())
+      }
+    }
     try {
       stream = await captureWebcam(settings)
       await session.publish(stream, webcamAsCapture(settings), 'webcam')
     } catch (caught) {
       stream?.getTracks().forEach((track) => track.stop())
+      if (swapping) session.stopStream('webcam')
       setError(captureErrorMessage(caught))
     } finally {
       setBusy(false)
@@ -229,6 +346,13 @@ export function useRoom() {
     audioRoute,
     busy,
     isolateAudio,
+    voiceLive,
+    micOn,
+    deafened,
+    toggleMic,
+    toggleDeafen,
+    chatMessages,
+    sendChat,
     screenLive,
     webcamLive,
     join,

@@ -1,7 +1,17 @@
 export type ResolutionPreset = '720p' | '1080p' | '1440p' | 'native'
 export type ContentHint = 'motion' | 'detail'
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
-export type StreamType = 'screen' | 'webcam'
+export type StreamType = 'screen' | 'webcam' | 'voice'
+export type Feature = 'voice' | 'chat'
+
+export interface ChatMessage {
+  id: string
+  peerId: string
+  displayName: string
+  text: string
+  image?: string
+  ts: number
+}
 export type AudioSourceMode = 'none' | 'system' | 'window' | 'device'
 
 export interface StreamMeta {
@@ -47,7 +57,8 @@ export interface SignalPayload {
 }
 
 export type ClientMessage =
-  | { type: 'join'; roomId: string; peerId: string; displayName: string; profile?: PublicProfile }
+  | { type: 'join'; roomId: string; peerId: string; displayName: string; profile?: PublicProfile; features?: Feature[] }
+  | { type: 'chat'; text?: string; image?: string }
   | { type: 'update-profile'; displayName: string; profile: PublicProfile }
   | { type: 'leave' }
   | { type: 'signal'; to: string; payload: SignalPayload }
@@ -67,6 +78,8 @@ export type ServerMessage =
   | { type: 'unwatch'; streamId: string; viewerId: string }
   | { type: 'watcher-joined'; streamId: string; broadcasterId: string; watcher: WatcherInfo }
   | { type: 'watcher-left'; streamId: string; broadcasterId: string; peerId: string }
+  | { type: 'chat'; message: ChatMessage }
+  | { type: 'chat-history'; messages: ChatMessage[] }
   | { type: 'pong' }
   | { type: 'error'; message: string }
 
@@ -102,6 +115,7 @@ export interface PeerView {
   peerId: string
   displayName: string
   profile: PublicProfile
+  hasVoice: boolean
   streams: RemoteStreamView[]
 }
 
@@ -130,6 +144,7 @@ export interface WebcamSettings {
   deviceId: string
   deviceLabel: string
   resolution: '720p' | '1080p'
+  facingMode?: 'user' | 'environment'
 }
 
 export const VIDEO_BITRATES = [

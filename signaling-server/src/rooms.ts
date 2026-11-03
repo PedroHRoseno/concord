@@ -1,6 +1,11 @@
+import { randomUUID } from 'node:crypto'
 import { WebSocket } from 'ws'
 import {
   isSignalPayload,
+  parseFeatures,
+  validateChat,
+  type ChatMessage,
+  type Feature,
   isStreamId,
   isStreamMeta,
   sanitizeProfile,
@@ -21,7 +26,17 @@ export interface Member {
   streams: Map<string, StreamMeta>
   watchers: Map<string, Set<string>>
   isAlive: boolean
+  features: Set<Feature>
+  chatTimes: number[]
 }
+
+const HISTORY_LIMIT = 100
+const HISTORY_IMAGE_BYTES = 600_000
+const CHAT_WINDOW_MS = 3000
+const CHAT_BURST = 5
+
+const isVoiceId = (streamId: string): boolean => streamId.endsWith(':voice')
+const hasVoice = (member: Member): boolean => member.features.has('voice')
 
 const ROOM_RE = /^[A-Za-z0-9_-]{1,64}$/
 const PEER_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -29,6 +44,7 @@ const PEER_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export class RoomHub {
   private rooms = new Map<string, Map<string, Member>>()
   private bySocket = new Map<WebSocket, Member>()
+  private history = new Map<string, ChatMessage[]>()
 
   roomCount(): number {
     return this.rooms.size
@@ -39,7 +55,8 @@ export class RoomHub {
     roomId: string,
     peerId: string,
     displayName: string,
-    profile: unknown
+    profile: unknown,
+    features?: unknown
   ): { ok: true } | { ok: false; error: string } {
     if (!ROOM_RE.test(roomId)) {
       return { ok: false, error: 'ID da sala inválido. Use letras, números, _ e - (até 64).' }
@@ -69,7 +86,9 @@ export class RoomHub {
       room.delete(peerId)
     }
 
-    const peers = [...room.values()].map((member) => this.toInfo(room, member))
+    const feats = parseFeatures(features)
+    const voiceOk = feats.has('voice')
+    const peers = [...room.values()].map((member) => this.toInfo(room, member, voiceOk))
     const member: Member = {
       socket,
       peerId,
@@ -78,12 +97,20 @@ export class RoomHub {
       roomId,
       streams: new Map(),
       watchers: new Map(),
-      isAlive: true
+      isAlive: true,
+      features: feats,
+      chatTimes: []
     }
     room.set(peerId, member)
     this.bySocket.set(socket, member)
     this.send(socket, { type: 'joined', peerId, peers })
-    this.broadcast(roomId, { type: 'peer-joined', peer: this.toInfo(room, member) }, peerId)
+    this.broadcastWith(roomId, peerId, (other) => ({
+      type: 'peer-joined',
+      peer: this.toInfo(room, member, hasVoice(other))
+    }))
+    if (feats.has('chat')) {
+      this.send(socket, { type: 'chat-history', messages: this.history.get(roomId) ?? [] })
+    }
     console.log(`[${roomId}] ${name} entrou (${room.size})`)
     return { ok: true }
   }
@@ -98,7 +125,47 @@ export class RoomHub {
     room.delete(member.peerId)
     this.broadcast(member.roomId, { type: 'peer-left', peerId: member.peerId })
     console.log(`[${member.roomId}] ${member.displayName} saiu (${room.size})`)
-    if (room.size === 0) this.rooms.delete(member.roomId)
+    if (room.size === 0) {
+      this.rooms.delete(member.roomId)
+      this.history.delete(member.roomId)
+    }
+  }
+
+  chat(socket: WebSocket, text: unknown, image: unknown): void {
+    const member = this.require(socket)
+    if (!member) return
+    const now = Date.now()
+    member.chatTimes = member.chatTimes.filter((t) => now - t < CHAT_WINDOW_MS)
+    if (member.chatTimes.length >= CHAT_BURST) {
+      this.send(socket, { type: 'error', message: 'Você está enviando mensagens rápido demais.' })
+      return
+    }
+    const result = validateChat(text, image)
+    if (!result.ok) {
+      this.send(socket, { type: 'error', message: result.error })
+      return
+    }
+    member.chatTimes.push(now)
+    const message: ChatMessage = {
+      id: randomUUID(),
+      peerId: member.peerId,
+      displayName: member.displayName,
+      text: result.text,
+      ts: now
+    }
+    if (result.image) message.image = result.image
+    const log = this.history.get(member.roomId) ?? []
+    log.push(message)
+    while (log.length > HISTORY_LIMIT) log.shift()
+    let bytes = 0
+    for (let i = log.length - 1; i >= 0; i--) {
+      const img = log[i].image
+      if (!img) continue
+      bytes += img.length
+      if (bytes > HISTORY_IMAGE_BYTES) log[i] = { ...log[i], image: undefined }
+    }
+    this.history.set(member.roomId, log)
+    this.broadcastWith(member.roomId, undefined, (other) => (other.features.has('chat') ? { type: 'chat', message } : null))
   }
 
   setStream(socket: WebSocket, streamId: unknown, meta: unknown): void {
@@ -123,7 +190,7 @@ export class RoomHub {
     }
     member.streams.set(streamId, meta)
     if (!member.watchers.has(streamId)) member.watchers.set(streamId, new Set())
-    this.broadcast(member.roomId, { type: 'stream-meta', peerId: member.peerId, streamId, meta })
+    this.broadcast(member.roomId, { type: 'stream-meta', peerId: member.peerId, streamId, meta }, undefined, isVoiceId(streamId))
     console.log(`[${member.roomId}] ${member.displayName} transmitindo ${meta.streamType}`)
   }
 
@@ -173,22 +240,32 @@ export class RoomHub {
     owner.watchers.set(streamId, set)
     if (kind === 'watch') {
       set.add(member.peerId)
-      this.broadcast(member.roomId, {
-        type: 'watcher-joined',
-        streamId,
-        broadcasterId: owner.peerId,
-        watcher: { peerId: member.peerId, displayName: member.displayName }
-      })
+      this.broadcast(
+        member.roomId,
+        {
+          type: 'watcher-joined',
+          streamId,
+          broadcasterId: owner.peerId,
+          watcher: { peerId: member.peerId, displayName: member.displayName }
+        },
+        undefined,
+        isVoiceId(streamId)
+      )
       this.send(owner.socket, { type: 'watch', streamId, viewerId: member.peerId })
       return
     }
     set.delete(member.peerId)
-    this.broadcast(member.roomId, {
-      type: 'watcher-left',
-      streamId,
-      broadcasterId: owner.peerId,
-      peerId: member.peerId
-    })
+    this.broadcast(
+      member.roomId,
+      {
+        type: 'watcher-left',
+        streamId,
+        broadcasterId: owner.peerId,
+        peerId: member.peerId
+      },
+      undefined,
+      isVoiceId(streamId)
+    )
     this.send(owner.socket, { type: 'unwatch', streamId, viewerId: member.peerId })
   }
 
@@ -205,12 +282,17 @@ export class RoomHub {
     if (!member.streams.has(streamId)) return
     member.streams.delete(streamId)
     member.watchers.delete(streamId)
-    this.broadcast(member.roomId, {
-      type: 'stream-meta',
-      peerId: member.peerId,
-      streamId,
-      meta: null
-    })
+    this.broadcast(
+      member.roomId,
+      {
+        type: 'stream-meta',
+        peerId: member.peerId,
+        streamId,
+        meta: null
+      },
+      undefined,
+      isVoiceId(streamId)
+    )
     console.log(`[${member.roomId}] ${member.displayName} parou ${streamId}`)
   }
 
@@ -218,12 +300,17 @@ export class RoomHub {
     for (const owner of room.values()) {
       for (const [streamId, set] of owner.watchers) {
         if (!set.delete(peerId)) continue
-        this.broadcast(owner.roomId, {
-          type: 'watcher-left',
-          streamId,
-          broadcasterId: owner.peerId,
-          peerId
-        })
+        this.broadcast(
+          owner.roomId,
+          {
+            type: 'watcher-left',
+            streamId,
+            broadcasterId: owner.peerId,
+            peerId
+          },
+          undefined,
+          isVoiceId(streamId)
+        )
       }
     }
   }
@@ -235,9 +322,10 @@ export class RoomHub {
     return undefined
   }
 
-  private toInfo(room: Map<string, Member>, member: Member): PeerInfo {
+  private toInfo(room: Map<string, Member>, member: Member, viewerHasVoice: boolean): PeerInfo {
     const watchers: PeerInfo['watchers'] = []
     for (const [streamId, ids] of member.watchers) {
+      if (!viewerHasVoice && isVoiceId(streamId)) continue
       for (const peerId of ids) {
         const watcher = room.get(peerId)
         if (!watcher) continue
@@ -249,7 +337,7 @@ export class RoomHub {
       peerId: member.peerId,
       displayName: member.displayName,
       profile: member.profile,
-      streams: [...member.streams.values()],
+      streams: [...member.streams.values()].filter((s) => viewerHasVoice || s.streamType !== 'voice'),
       watchers
     }
   }
@@ -263,12 +351,27 @@ export class RoomHub {
     return member
   }
 
-  private broadcast(roomId: string, message: ServerMessage, exceptPeerId?: string): void {
+  private broadcast(roomId: string, message: ServerMessage, exceptPeerId?: string, voiceOnly = false): void {
     const room = this.rooms.get(roomId)
     if (!room) return
     for (const member of room.values()) {
       if (member.peerId === exceptPeerId) continue
+      if (voiceOnly && !hasVoice(member)) continue
       this.send(member.socket, message)
+    }
+  }
+
+  private broadcastWith(
+    roomId: string,
+    exceptPeerId: string | undefined,
+    build: (member: Member) => ServerMessage | null
+  ): void {
+    const room = this.rooms.get(roomId)
+    if (!room) return
+    for (const member of room.values()) {
+      if (member.peerId === exceptPeerId) continue
+      const message = build(member)
+      if (message) this.send(member.socket, message)
     }
   }
 

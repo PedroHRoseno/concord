@@ -23,3 +23,88 @@ jobs:
           VITE_SIGNALING_URL: ${{ secrets.VITE_SIGNALING_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run publish:win
+
+  build-android:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - name: Versão da tag
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('./desktop-app/package.json').version")"
+          fi
+          CODE="$(node -e "const [a,b,c]=(process.argv[1]||'').split('.').map(n=>parseInt(n,10)||0); if(a>99||b>999||c>999) process.exit(1); process.stdout.write(String(a*1000000+b*1000+c))" "$VERSION")"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+      - name: Build web e sync
+        env:
+          VITE_SIGNALING_URL: ${{ secrets.VITE_SIGNALING_URL }}
+          VITE_APP_VERSION: ${{ env.VERSION }}
+        run: npm run build:android
+      - name: Keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          missing=0
+          [ -n "$ANDROID_KEYSTORE_BASE64" ] || missing=1
+          [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || missing=1
+          [ -n "$ANDROID_KEY_ALIAS" ] || missing=1
+          [ -n "$ANDROID_KEY_PASSWORD" ] || missing=1
+          if [ "$missing" = 1 ]; then
+            if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+              echo "As quatro secrets da keystore são obrigatórias para publicar o APK assinado."
+              exit 1
+            fi
+            echo "Sem keystore completa: o APK deste disparo sai sem assinatura."
+            exit 0
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/concord-release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/concord-release.jks" >> "$GITHUB_ENV"
+      - name: Montar APK
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon -PversionName="$VERSION" -PversionCode="$VERSION_CODE"
+      - name: Renomear APK
+        shell: bash
+        run: |
+          APK="$(find mobile/android/app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          cp "$APK" "Concord-Android-v${VERSION}.apk"
+      - name: Anexar à Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "$GITHUB_REF_NAME" "Concord-Android-v${VERSION}.apk" --clobber
+      - name: Guardar artefato
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Concord-Android-v${{ env.VERSION }}
+          path: Concord-Android-v${{ env.VERSION }}.apk

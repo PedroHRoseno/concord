@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import { hasHotkeys, isElectron } from '@renderer/lib/platform'
 import { readSoundPrefs, writeSoundEnabled, writeSoundVolume } from '@renderer/utils/soundEffects'
+import { readPreviews, writePreviews } from '@renderer/lib/chat'
+import { listInputDevices, readInputDeviceId, writeInputDeviceId } from '@renderer/lib/voice'
 import { listOutputDevices, readDiscordClientId, readSinkId, writeDiscordClientId, writeSinkId } from '@renderer/lib/playback'
 
 interface SettingsSheetProps {
@@ -21,9 +24,14 @@ function acceleratorFrom(event: KeyboardEvent): string | null {
   return parts.join('+')
 }
 
+type HotkeyAction = 'share' | 'mute' | 'deafen'
+
 export function SettingsSheet({ onClose }: SettingsSheetProps) {
-  const [hotkey, setHotkey] = useState('Alt+S')
-  const [listening, setListening] = useState(false)
+  const [hotkeys, setHotkeys] = useState({ share: 'Alt+S', mute: '', deafen: '' })
+  const [listening, setListening] = useState<HotkeyAction | null>(null)
+  const [inputId, setInputId] = useState(readInputDeviceId)
+  const [inputs, setInputs] = useState<Array<{ deviceId: string; label: string }>>([])
+  const [previews, setPreviews] = useState(readPreviews)
   const [problem, setProblem] = useState<string | null>(null)
   const [soundsOn, setSoundsOn] = useState(() => readSoundPrefs().enabled)
   const [soundVolume, setSoundVolume] = useState(() => Math.round(readSoundPrefs().volume * 100))
@@ -46,23 +54,47 @@ export function SettingsSheet({ onClose }: SettingsSheetProps) {
   }, [])
 
   useEffect(() => {
-    const read = window.electronAPI?.getHotkey
-    if (read) void read().then(setHotkey).catch(() => undefined)
+    let cancel = false
+    void listInputDevices()
+      .then((devices) => {
+        if (!cancel) setInputs(devices)
+      })
+      .catch(() => {
+        if (!cancel) setInputs([])
+      })
+    return () => {
+      cancel = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const read = window.electronAPI?.getHotkeys
+    if (read) void read().then(setHotkeys).catch(() => undefined)
+    return window.electronAPI?.onHotkeys?.(setHotkeys)
   }, [])
 
   useEffect(() => {
     if (!listening) return
     const onKey = (event: KeyboardEvent) => {
       event.preventDefault()
+      if (event.key === 'Escape' || event.key === 'Backspace' || event.key === 'Delete') {
+        const action = listening
+        setListening(null)
+        if (action !== 'share') {
+          void window.electronAPI?.setHotkeyFor?.(action, '')?.then(() => setProblem(null))
+        }
+        return
+      }
       const next = acceleratorFrom(event)
       if (!next) return
-      setListening(false)
-      void window.electronAPI?.setHotkey?.(next)?.then((ok) => {
+      const action = listening
+      setListening(null)
+      void window.electronAPI?.setHotkeyFor?.(action, next)?.then((ok) => {
         if (ok) {
-          setHotkey(next)
+          setHotkeys((current) => ({ ...current, [action]: next }))
           setProblem(null)
         } else {
-          setProblem('O sistema não aceitou esse atalho.')
+          setProblem('O sistema não aceitou esse atalho, ou ele já está em uso por outra ação.')
         }
       })
     }
@@ -73,7 +105,7 @@ export function SettingsSheet({ onClose }: SettingsSheetProps) {
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/50 p-4" onClick={onClose}>
       <div
-        className="modal-pop w-full max-w-md rounded-2xl bg-elevated p-4 shadow-2xl ring-1 ring-white/10"
+        className="modal-pop max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-elevated p-4 shadow-2xl ring-1 ring-white/10"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
@@ -82,15 +114,36 @@ export function SettingsSheet({ onClose }: SettingsSheetProps) {
             <X className="h-4 w-4" />
           </button>
         </div>
+        {hasHotkeys() ? (
+          <>
         <p className="text-sm text-muted">Atalho para abrir o compartilhamento de tela.</p>
         <button
           type="button"
-          onClick={() => setListening(true)}
+          onClick={() => setListening('share')}
           className="mt-3 h-11 w-full rounded-lg bg-app text-sm font-semibold text-ink ring-1 ring-line transition-all duration-200 ease-out active:scale-95"
         >
-          {listening ? 'Pressione o atalho…' : hotkey}
+          {listening === 'share' ? 'Pressione o atalho…' : hotkeys.share}
         </button>
+        {(
+          [
+            ['mute', 'Atalho global para mutar o microfone'],
+            ['deafen', 'Atalho global para ensurdecer']
+          ] as const
+        ).map(([action, label]) => (
+          <div key={action} className="mt-4">
+            <p className="text-sm text-muted">{label}</p>
+            <button
+              type="button"
+              onClick={() => setListening(action)}
+              className="mt-2 h-10 w-full rounded-lg bg-app text-sm font-semibold text-ink ring-1 ring-line transition-all duration-200 ease-out active:scale-95"
+            >
+              {listening === action ? 'Pressione o atalho… (Esc remove)' : hotkeys[action] || 'Sem atalho'}
+            </button>
+          </div>
+        ))}
         {problem ? <p className="mt-2 text-sm text-danger">{problem}</p> : null}
+          </>
+        ) : null}
         <label className="mt-5 flex items-center justify-between gap-3 text-sm text-ink">
           Efeitos sonoros da sala
           <input
@@ -122,6 +175,39 @@ export function SettingsSheet({ onClose }: SettingsSheetProps) {
           />
         </label>
         <label className="mt-5 block text-xs text-muted">
+          Microfone
+          <select
+            value={inputId}
+            aria-label="Microfone"
+            onChange={(event) => {
+              const next = event.target.value
+              setInputId(next)
+              writeInputDeviceId(next)
+            }}
+            className="mt-2 h-10 w-full rounded-lg bg-app px-2 text-sm text-ink ring-1 ring-line"
+          >
+            <option value="">Padrão do sistema</option>
+            {inputs.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-[11px]">Vale na próxima vez que você ligar o microfone.</span>
+        </label>
+        <label className="mt-5 flex items-center justify-between gap-3 text-sm text-ink">
+          Pré-visualizar links no chat
+          <input
+            type="checkbox"
+            checked={previews}
+            onChange={(event) => {
+              setPreviews(event.target.checked)
+              writePreviews(event.target.checked)
+            }}
+            className="h-4 w-4 accent-blurple"
+          />
+        </label>
+        <label className="mt-5 block text-xs text-muted">
           Dispositivo de saída
           <select
             value={sinkId}
@@ -141,6 +227,8 @@ export function SettingsSheet({ onClose }: SettingsSheetProps) {
             ))}
           </select>
         </label>
+        {isElectron() ? (
+          <>
         <label className="mt-5 block text-xs text-muted">
           Client ID do Discord
           <input
@@ -159,6 +247,8 @@ export function SettingsSheet({ onClose }: SettingsSheetProps) {
           />
         </label>
         <p className="mt-3 text-xs text-muted">Ctrl+Shift+N continua abrindo outra janela. Sem o Client ID, o Discord fica sem presença.</p>
+          </>
+        ) : null}
       </div>
     </div>,
     document.body

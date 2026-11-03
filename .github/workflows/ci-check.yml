@@ -18,4 +18,5 @@ jobs:
       - run: npm run build -w signaling-server
       - run: npm run typecheck -w signaling-server
       - run: npm run typecheck -w desktop-app
+      - run: npm run build:mobile
       - run: npm run build -w desktop-app

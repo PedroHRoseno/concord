@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import logo from '@renderer/assets/logo.png'
+import { DownloadApkButton } from '@renderer/components/ApkRelease'
 import { ProfileFields } from '@renderer/components/ProfileFields'
 import { readProfile, writeProfile } from '@renderer/lib/profile'
 import type { LobbyInput, UserProfile } from '@renderer/types'
@@ -160,7 +161,10 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
         <img src={logo} alt="" className="h-16 w-16" />
         <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-blurple">Concord</p>
         <h1 className="mt-2 text-2xl font-semibold text-ink">Entrar na sala</h1>
-        <p className="mt-2 text-sm text-muted">Tela, webcam e áudio do aplicativo. Sem chat de texto.</p>
+        <p className="mt-2 text-sm text-muted">Tela, webcam, voz, áudio do aplicativo e chat de texto.</p>
+        <div className="mt-3">
+          <DownloadApkButton />
+        </div>
 
         <label className="mt-6 block text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="display-name">
           Nome de exibição

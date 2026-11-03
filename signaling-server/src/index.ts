@@ -4,7 +4,39 @@ import { RoomHub } from './rooms.js'
 
 const port = Number(process.env.PORT ?? 8080)
 const host = process.env.HOST ?? '0.0.0.0'
-const MAX_MESSAGE = 65_536
+const MAX_MESSAGE = 131_072
+const MAX_CONTROL_MESSAGE = 65_536
+const STUN_SERVERS = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }]
+const TURN_TTL = 86_400
+const TURN_CACHE_MS = 10 * 60_000
+let turnCache: { at: number; body: unknown } | null = null
+
+async function fetchTurn(): Promise<unknown> {
+  const keyId = process.env.CF_TURN_KEY_ID
+  const apiToken = process.env.CF_TURN_API_TOKEN
+  if (!keyId || !apiToken) return { iceServers: STUN_SERVERS }
+  if (turnCache && Date.now() - turnCache.at < TURN_CACHE_MS) return turnCache.body
+  try {
+    const response = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${apiToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ ttl: TURN_TTL }),
+        signal: AbortSignal.timeout(5000)
+      }
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const data = (await response.json()) as { iceServers?: unknown }
+    if (!Array.isArray(data.iceServers)) throw new Error('resposta inesperada')
+    const body = { iceServers: data.iceServers }
+    turnCache = { at: Date.now(), body }
+    return body
+  } catch (error) {
+    console.warn('Falha ao obter credenciais TURN:', error instanceof Error ? error.message : error)
+    return { iceServers: STUN_SERVERS }
+  }
+}
 
 function writeJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -24,6 +56,10 @@ function handleHttp(req: IncomingMessage, res: ServerResponse): void {
   }
   if (req.method === 'GET' && path === '/health') {
     writeJson(res, 200, { status: 'ok', rooms: hub.roomCount(), users: hub.members().length })
+    return
+  }
+  if (req.method === 'GET' && path === '/turn') {
+    void fetchTurn().then((body) => writeJson(res, 200, body))
     return
   }
   res.writeHead(200, {
@@ -68,14 +104,22 @@ wss.on('connection', (socket) => {
       return
     }
 
+    if (message.type !== 'chat' && text.length > MAX_CONTROL_MESSAGE) {
+      socket.send(JSON.stringify({ type: 'error', message: 'Mensagem grande demais.' }))
+      return
+    }
+
     switch (message.type) {
+      case 'chat':
+        hub.chat(socket, message.text, message.image)
+        return
       case 'join':
         if (typeof message.roomId !== 'string' || typeof message.peerId !== 'string' || typeof message.displayName !== 'string') {
           socket.send(JSON.stringify({ type: 'error', message: 'Join incompleto.' }))
           return
         }
         {
-          const result = hub.join(socket, message.roomId, message.peerId, message.displayName, message.profile)
+          const result = hub.join(socket, message.roomId, message.peerId, message.displayName, message.profile, message.features)
           if (!result.ok) {
             socket.send(JSON.stringify({ type: 'error', message: result.error }))
           }

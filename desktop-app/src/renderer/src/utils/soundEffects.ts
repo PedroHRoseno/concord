@@ -89,3 +89,8 @@ export function playStreamStopSound(): void {
 export function playViewerJoinedMyStreamSound(): void {
   tone(784, 0, 0.14, 'sine', peak(0.1))
 }
+
+export function playChatSound(): void {
+  tone(880, 0, 0.07, 'sine', peak(0.08))
+  tone(1175, 0.06, 0.1, 'sine', peak(0.07))
+}

@@ -9,6 +9,17 @@ export function tuneOpus(sdp: string, maxAverageBitrate: number): string {
   return sdp.replace(match[0], `${match[0]}${eol}${line}`)
 }
 
+export function tuneOpusVoice(sdp: string, maxAverageBitrate: number): string {
+  const match = /a=rtpmap:(\d+)\s+opus\/48000(?:\/2)?/i.exec(sdp)
+  if (!match) return sdp
+  const payloadType = match[1]
+  const line = `a=fmtp:${payloadType} minptime=10;useinbandfec=1;stereo=0;sprop-stereo=0;maxaveragebitrate=${maxAverageBitrate};usedtx=0`
+  const fmtp = new RegExp(`a=fmtp:${payloadType}[^\\r\\n]*`)
+  if (fmtp.test(sdp)) return sdp.replace(fmtp, line)
+  const eol = sdp.includes('\r\n') ? '\r\n' : '\n'
+  return sdp.replace(match[0], `${match[0]}${eol}${line}`)
+}
+
 function primaryRank(mimeType: string): number {
   switch (mimeType.toLowerCase()) {
     case 'video/h264':

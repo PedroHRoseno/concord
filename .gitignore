@@ -1,5 +1,11 @@
 node_modules/
 dist/
+desktop-app/dist-mobile/
+mobile/android/build/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/capacitor-cordova-android-plugins/build/
+mobile/android/local.properties
 out/
 release/
 *.ico
@@ -7,6 +13,8 @@ release/
 Thumbs.db
 *.log
 *.tsbuildinfo
+*.jks
+*.keystore
 .env
 .env.*
 !.env.example

@@ -4,6 +4,7 @@ import { StreamCard, type StageEntry } from '@renderer/components/StreamCard'
 import type { FloatCam } from '@renderer/components/VideoStage'
 import { clampVolume } from '@renderer/lib/playback'
 import type { DesktopAudioRoute } from '@renderer/lib/audio-loopback'
+import { useMobileLayout } from '@renderer/lib/platform'
 import { clampTile, cornerLayout, equalGrid, placeNew, type TileBox } from '@renderer/lib/stage-layout'
 
 interface AudioMix {
@@ -48,6 +49,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
   ref
 ) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
+  const mobile = useMobileLayout()
   const [mixes, setMixes] = useState<Record<string, AudioMix>>({})
   const [tiles, setTiles] = useState<Record<string, Tile>>({})
   const [stamp, setStamp] = useState(0)
@@ -322,7 +324,8 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
         onWatch={() => onWatch(entry.id)}
         onUnwatch={() => onUnwatch(entry.id)}
         onFocus={() => {
-          if (entry.meta.streamType === 'screen') setFocusedId(entry.id)
+          const hasScreen = entries.some((item) => item.meta.streamType === 'screen')
+          if (entry.meta.streamType === 'screen' || !hasScreen) setFocusedId(entry.id)
           onLayoutChange('focus')
         }}
         onExitFocus={() => {
@@ -343,8 +346,29 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
 
   const screens = entries.filter((entry) => entry.meta.streamType === 'screen')
   const webcams = entries.filter((entry) => entry.meta.streamType === 'webcam')
-  const main = layout === 'focus' ? (screens.find((entry) => entry.id === focusedId) ?? screens[0] ?? null) : null
-  const strip = main ? [...screens.filter((entry) => entry.id !== main.id), ...webcams] : webcams
+  const main =
+    layout === 'focus'
+      ? (screens.find((entry) => entry.id === focusedId) ??
+        screens[0] ??
+        webcams.find((entry) => entry.id === focusedId) ??
+        webcams[0] ??
+        null)
+      : null
+
+  if (mobile) {
+    const stack = main ? [main, ...entries.filter((entry) => entry.id !== main.id)] : entries
+    return (
+      <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3">
+        {stack.map((entry, index) => (
+          <div key={entry.id} className={index === 0 && main ? 'h-[52vh] w-full shrink-0' : 'aspect-video w-full shrink-0'}>
+            {card(entry, true, Boolean(main) && index === 0, false)}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const strip = main ? entries.filter((entry) => entry.id !== main.id) : webcams
 
   if (layout === 'focus') {
     const horizontal = cameraRail === 'bottom'

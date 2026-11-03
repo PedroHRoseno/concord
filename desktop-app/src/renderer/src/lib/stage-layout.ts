@@ -33,7 +33,7 @@ export function equalGrid(count: number, width: number, height: number): TileBox
   return boxes
 }
 
-export function cornerLayout(kinds: Array<'screen' | 'webcam'>, width: number, height: number): TileBox[] {
+export function cornerLayout(kinds: string[], width: number, height: number): TileBox[] {
   const boxes = equalGrid(kinds.length, width, height)
   const screens = kinds.flatMap((kind, index) => (kind === 'screen' ? [index] : []))
   const cams = kinds.flatMap((kind, index) => (kind === 'webcam' ? [index] : []))

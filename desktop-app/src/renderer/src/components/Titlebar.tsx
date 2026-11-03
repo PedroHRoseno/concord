@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Copy, Minus, RefreshCw, Square, X } from 'lucide-react'
 import logo from '@renderer/assets/logo.png'
 import type { ConnectionStatus } from '@renderer/types'
+import { DownloadApkButton } from '@renderer/components/ApkRelease'
+import { hasUpdater, hasWindowControls, useMobileLayout } from '@renderer/lib/platform'
 import { UpdateDialog, type UpdateStatus } from '@renderer/components/UpdateDialog'
 
 const LABELS: Record<ConnectionStatus, string> = {
@@ -34,7 +36,7 @@ function WindowControls() {
     return window.electronAPI?.onMaximized?.(setMaximized)
   }, [])
 
-  if (!window.electronAPI?.minimize) return null
+  if (!hasWindowControls()) return null
 
   return (
     <div className="no-drag flex h-full shrink-0">
@@ -67,6 +69,7 @@ function WindowControls() {
 }
 
 export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarProps) {
+  const mobile = useMobileLayout()
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [updateOpen, setUpdateOpen] = useState(false)
@@ -114,6 +117,8 @@ export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarPro
     }
   }, [])
 
+  if (mobile) return null
+
   return (
     <header className="titlebar-drag flex h-12 shrink-0 items-center border-b border-line bg-elevated">
       <div className="flex min-w-0 flex-1 items-center gap-3 pl-3">
@@ -125,7 +130,8 @@ export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarPro
       </div>
       <div className="no-drag flex h-full items-center gap-3 pr-2 text-sm text-muted">
         {version ? <span>v{version}</span> : null}
-        {window.electronAPI?.checkForUpdates ? (
+        <DownloadApkButton />
+        {hasUpdater() ? (
           <button
             type="button"
             onClick={() => {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import os from 'node:os'
 import { join } from 'path'
 import { registerCapture } from './capture'
@@ -222,6 +222,17 @@ function registerWindowControls(): void {
     closePicker()
   })
   ipcMain.handle('picker:room-state', () => roomState)
+  ipcMain.handle('shell:open-external', async (_event, url: unknown) => {
+    if (typeof url !== 'string' || url.length > 2048) return false
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+      await shell.openExternal(parsed.toString())
+      return true
+    } catch {
+      return false
+    }
+  })
   ipcMain.handle('os:username', () => {
     try {
       return os.userInfo().username

@@ -24,6 +24,12 @@ export interface QuickShareSettings {
   contentHint: 'motion' | 'detail'
 }
 
+export interface HotkeyMap {
+  share: string
+  mute: string
+  deafen: string
+}
+
 export interface ElectronBridge {
   getDesktopSources: () => Promise<DesktopSourceInfo[]>
   getSourcesSignature: () => Promise<string>
@@ -37,6 +43,12 @@ export interface ElectronBridge {
   getOsUsername: () => Promise<string>
   getHotkey: () => Promise<string>
   setHotkey: (accelerator: string) => Promise<boolean>
+  getHotkeys: () => Promise<HotkeyMap>
+  setHotkeyFor: (action: 'share' | 'mute' | 'deafen', accelerator: string) => Promise<boolean>
+  onHotkeys: (listener: (map: HotkeyMap) => void) => () => void
+  onVoiceToggleMute: (listener: () => void) => () => void
+  onVoiceToggleDeafen: (listener: () => void) => () => void
+  openExternal: (url: string) => Promise<boolean>
   onHotkey: (listener: (accelerator: string) => void) => () => void
   onOpenShare: (listener: () => void) => () => void
   onQuickShareStart: (listener: (settings: QuickShareSettings) => void) => () => void

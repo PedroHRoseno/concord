@@ -1,12 +1,14 @@
-import { Monitor, Video } from 'lucide-react'
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { Monitor, Video, Volume2, VolumeX } from 'lucide-react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Avatar } from '@renderer/components/Avatar'
+import { setPeerMuted, setPeerVolume, usePeerPrefs } from '@renderer/lib/voice'
 import type { LocalPublication, PeerView, PublicProfile, StreamMeta, UserProfile } from '@renderer/types'
 
 interface Person {
   peerId: string
   name: string
   self: boolean
+  hasVoice: boolean
   profile: PublicProfile
   streams: Array<{ meta: StreamMeta; watching: boolean }>
 }
@@ -20,6 +22,40 @@ interface MemberListProps {
   onWatch: (streamId: string) => void
   onUnwatch: (streamId: string) => void
   onEditSelf: () => void
+  tab: 'room' | 'chat'
+  onTab: (tab: 'room' | 'chat') => void
+  unread: number
+  chat: ReactNode
+  sheet?: boolean
+}
+
+function VoiceControls({ name }: { name: string }) {
+  const prefs = usePeerPrefs(name)
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setPeerMuted(name, !prefs.muted)}
+        title={prefs.muted ? 'Reativar a voz' : 'Silenciar a voz (só para você)'}
+        aria-label={prefs.muted ? 'Reativar a voz' : 'Silenciar a voz'}
+        aria-pressed={prefs.muted}
+        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${prefs.muted ? 'bg-danger/20 text-danger' : 'text-muted hover:text-ink'}`}
+      >
+        {prefs.muted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
+      </button>
+      <input
+        type="range"
+        min={0}
+        max={200}
+        value={Math.round(prefs.volume * 100)}
+        disabled={prefs.muted}
+        aria-label={`Volume da voz de ${name}`}
+        title={`Voz: ${Math.round(prefs.volume * 100)}%`}
+        onChange={(event) => setPeerVolume(name, Number(event.target.value) / 100)}
+        className="min-w-0 flex-1 disabled:opacity-40"
+      />
+    </div>
+  )
 }
 
 function sourceLine(meta: StreamMeta): string {
@@ -45,7 +81,21 @@ function readSidebarWidth(): number {
   return 256
 }
 
-export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWatch, onUnwatch, onEditSelf }: MemberListProps) {
+export function MemberList({
+  selfName,
+  selfId,
+  selfProfile,
+  locals,
+  peers,
+  onWatch,
+  onUnwatch,
+  onEditSelf,
+  tab,
+  onTab,
+  unread,
+  chat,
+  sheet = false
+}: MemberListProps) {
   const [width, setWidth] = useState(readSidebarWidth)
   const drag = useRef<{ x: number; width: number } | null>(null)
 
@@ -67,6 +117,7 @@ export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWat
       peerId: selfId,
       name: selfName,
       self: true,
+      hasVoice: false,
       profile: selfProfile,
       streams: locals.map((item) => ({ meta: item.meta, watching: true }))
     },
@@ -74,13 +125,22 @@ export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWat
       peerId: peer.peerId,
       name: peer.displayName,
       self: false,
+      hasVoice: peer.hasVoice,
       profile: peer.profile,
       streams: peer.streams.map((item) => ({ meta: item.meta, watching: item.watching }))
     }))
   ]
 
   return (
-    <aside className="relative flex shrink-0 flex-col border-l border-line bg-elevated" style={{ width }}>
+    <aside
+      className={
+        sheet
+          ? 'flex max-h-[78vh] w-full flex-col rounded-t-2xl bg-elevated'
+          : 'relative flex shrink-0 flex-col border-l border-line bg-elevated'
+      }
+      style={sheet ? undefined : { width }}
+    >
+      {sheet ? null : (
       <div
         role="separator"
         aria-orientation="vertical"
@@ -95,8 +155,31 @@ export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWat
           drag.current = null
         }}
       />
-      <h2 className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted">Na sala</h2>
-      <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3">
+      )}
+      <div className="flex gap-1 px-3 py-2" role="tablist">
+        {(
+          [
+            ['room', 'Na Sala'],
+            ['chat', 'Chat']
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => onTab(id)}
+            className={`relative inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide transition-colors ${sheet ? 'h-11' : 'h-8'} ${tab === id ? 'bg-app text-ink' : 'text-muted hover:text-ink'}`}
+          >
+            {label}
+            {id === 'chat' && unread > 0 ? (
+              <span className="min-w-4 rounded-full bg-danger px-1 text-center text-[10px] leading-4 text-white">{unread > 99 ? '99+' : unread}</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+      {tab === 'chat' ? chat : null}
+      <ul className={`min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-3 ${tab === 'room' ? '' : 'hidden'}`}>
         {people.map((person) => {
           const screen = person.streams.find((item) => item.meta.streamType === 'screen')
           const webcam = person.streams.find((item) => item.meta.streamType === 'webcam')
@@ -110,6 +193,7 @@ export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWat
                     src={person.profile.avatarDataUrl}
                     accent={person.profile.accentColor}
                     live={Boolean(screen || webcam)}
+                    peerId={person.peerId}
                     size="sm"
                   />
                   <span className="min-w-0">
@@ -147,11 +231,12 @@ export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWat
                   <span className="truncate">{sourceLine(webcam.meta)}</span>
                 </p>
               ) : null}
+              {!person.self && person.hasVoice ? <VoiceControls name={person.name} /> : null}
               {!person.self && screen ? (
                 <button
                   type="button"
                   onClick={() => (screen.watching ? onUnwatch(screen.meta.streamId) : onWatch(screen.meta.streamId))}
-                  className={`mt-2 w-full rounded-lg px-2 py-1.5 text-xs font-semibold transition-all duration-200 ease-out active:scale-95 ${screen.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
+                  className={`mt-2 w-full rounded-lg px-2 font-semibold transition-all duration-200 ease-out active:scale-95 ${sheet ? 'min-h-11 text-sm' : 'py-1.5 text-xs'} ${screen.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
                 >
                   {screen.watching ? 'Deixar live' : 'Assistir live'}
                 </button>
@@ -160,7 +245,7 @@ export function MemberList({ selfName, selfId, selfProfile, locals, peers, onWat
                 <button
                   type="button"
                   onClick={() => (webcam.watching ? onUnwatch(webcam.meta.streamId) : onWatch(webcam.meta.streamId))}
-                  className={`mt-2 w-full rounded-lg px-2 py-1.5 text-xs font-semibold transition-all duration-200 ease-out active:scale-95 ${webcam.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
+                  className={`mt-2 w-full rounded-lg px-2 font-semibold transition-all duration-200 ease-out active:scale-95 ${sheet ? 'min-h-11 text-sm' : 'py-1.5 text-xs'} ${webcam.watching ? 'bg-zinc-700/80 text-white hover:bg-red-500/20 hover:text-red-300' : 'bg-blurple text-white hover:bg-[#4752c4]'}`}
                 >
                   {webcam.watching ? 'Ocultar câmera' : 'Ver câmera'}
                 </button>
