@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+// Fora do bloco android: dentro de defaultConfig, `versionCode (...) as Integer`
+// vira cast do retorno do setter, que é null, e o Gradle aborta com "Value is null".
+def rawVersionCode = findProperty("versionCode")?.toString()?.trim()
+def concordVersionCode = rawVersionCode?.isInteger() ? rawVersionCode.toInteger() : 1
+def concordVersionName = findProperty("versionName")?.toString()?.trim() ?: "1.6.0"
+
 android {
     namespace = "com.concord.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +13,8 @@ android {
         applicationId "com.concord.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode (project.findProperty("versionCode") ?: "1") as Integer
-        versionName project.findProperty("versionName") ?: "1.6.0"
+        versionCode concordVersionCode
+        versionName concordVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
