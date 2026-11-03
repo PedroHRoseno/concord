@@ -2,6 +2,16 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [1.7.0] - 2026-11-03
+
+### Adicionado
+
+- Supressão de ruído com RNNoise no microfone, com fallback de high-pass e noise gate, e os modos Básico e Estúdio.
+- Chat com mensagens agrupadas, lightbox de imagem e prévia de links via `GET /unfurl`.
+- Menu de volume da voz e da live na lista da sala.
+- Ajustes em tela cheia, com perfil, voz, vídeo, sons, atalhos e sobre.
+- Barra de layout que mostra só as ações do modo Grade ou do modo Foco.
+
 ## [1.6.0] - 2026-11-03
 
 ### Adicionado
