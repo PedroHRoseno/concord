@@ -1,0 +1,25 @@
+---
+description: Isolamento de tracks WebRTC, áudio de voz e camadas do palco
+globs: desktop-app/src/renderer/src/lib/webrtc.ts,desktop-app/src/renderer/src/lib/voice.ts,desktop-app/src/renderer/src/lib/sdp.ts,desktop-app/src/renderer/src/lib/ice.ts,desktop-app/src/renderer/src/lib/capture.ts,desktop-app/src/renderer/src/lib/playback.ts,desktop-app/src/renderer/src/lib/stage-layout.ts,desktop-app/src/renderer/src/components/Stage.tsx,desktop-app/src/renderer/src/components/VideoStage.tsx,desktop-app/src/main/audioLoopback.ts,desktop-app/src/main/capture.ts,signaling-server/src/**/*.ts
+alwaysApply: false
+---
+
+# WebRTC e isolamento de áudio
+
+Cada publicação é uma track própria: `peerId:screen`, `peerId:webcam` ou `peerId:voice`. Não junte esses fluxos num `MediaStream` só.
+
+- Voz recebida entra em `AudioContext` → `GainNode` do peer → analyser → ganho mestre → `destination`. O `<audio>` oculto fica `muted`, só para o Chromium soltar o fluxo. Proibido ligar essa track a `MediaStreamAudioDestinationNode` ou ao stream publicado de tela/webcam.
+- O loopback WASAPI não pode capturar a voz do Concord. Tela inteira exclui a árvore do processo Electron. Janela captura só o PID alvo. `isolateAudio` e o modo `excluded` não se misturam com `publishVoice`.
+- O servidor omite streams `voice` de quem entrou sem `features: ['voice']`. O palco filtra `voice` antes de montar card.
+- Ganho da live (`clampVolume` em `playback.ts`): 0 a 3, o slider de 0–300%. Ganho da voz (`MAX_GAIN` em `voice.ts`): 0 a 2, o slider de 0–200%. Mute de voz usa `track.enabled = false`. Deafen zera o ganho mestre e também muta o microfone.
+- Opus de voz: mono, 48 kHz, FEC, 96 kbps no desktop e 64 kbps no mobile. Não reutilize o `tuneOpus` estéreo da live.
+- ICE: `iceTransportPolicy: 'all'`. A lista vem de `/turn` (Cloudflare Realtime, cache curto) e o TURN manual do lobby continua como override. Falha de conexão refaz a offer com `iceRestart: true`.
+- No Modo Grade, webcam fica na faixa `z` 30–39 e tela na faixa 10–19. Modal usa `createPortal(..., document.body)` com `z-[9999]`.
+
+```ts
+// A voz de quem assiste voltaria para a live.
+screenStream.addTrack(remoteVoiceTrack)
+
+// A voz fica no grafo local e o loopback continua sem o processo do Concord.
+attachRemoteVoice(peerId, displayName, remoteStream)
+```

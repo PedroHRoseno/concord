@@ -1,0 +1,30 @@
+---
+description: Segredos, instalador NSIS e paridade de versão Desktop/Android
+globs: .github/workflows/**/*.yml,**/.gitignore,**/package.json,desktop-app/electron-builder.yml,desktop-app/src/main/updates.ts,mobile/android/**/*.gradle,mobile/android/**/*.properties,**/.env.example
+alwaysApply: false
+---
+
+# Release e segurança
+
+O repositório é público. Segredo nenhum entra no Git, no APK ou no bundle do renderer.
+
+- Recuse `*.jks`, `*.keystore`, `.env`, `.env.*` (exceto `.env.example`), `local.properties` e token de TURN/API. Keystore de release vive nas secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` e `ANDROID_KEY_PASSWORD`. O Gradle só assina se `ANDROID_KEYSTORE_PATH` e as três credenciais existirem.
+- `CF_TURN_KEY_ID` e `CF_TURN_API_TOKEN` ficam no Railway. O cliente só recebe a credencial efêmera de `GET /turn`.
+- `VITE_SIGNALING_URL` é secret de build do Actions, não uma URL hardcoded nova.
+
+Instalador Windows, em `desktop-app/electron-builder.yml` e `desktop-app/src/main/updates.ts`:
+
+- NSIS one-click: `oneClick: true`, `perMachine: false` (instalação em `%LOCALAPPDATA%\Programs`, sem UAC).
+- `autoUpdater.autoDownload = false`. Quem baixa a atualização confirma no app. Não volte para download automático.
+
+Paridade na tag `vX.Y.Z`:
+
+- `desktop-app/package.json` e `mobile/package.json` usam `X.Y.Z`.
+- O job `build-android` deriva `versionName` e `versionCode` da tag (`a * 1000000 + b * 1000 + c`) e só anexa `Concord-Android-vX.Y.Z.apk` depois do job `release`. Sem tag, o APK é artefato, não um upload na Release.
+- Não crie tag, Release ou push sem pedido explícito.
+
+```yaml
+# Certo: o APK espera a Release do .exe existir.
+build-android:
+  needs: release
+```

@@ -1,0 +1,28 @@
+---
+description: Arquitetura híbrida Electron/Android e sinalização sem estado do Concord
+alwaysApply: true
+---
+
+# Arquitetura e plataforma
+
+O renderer em `desktop-app/src/renderer` é o mesmo bundle do Windows e do Android. Ele tem de rodar no WebView.
+
+- A ponte do desktop é `window.electronAPI`, só no processo Electron. No renderer, passe por `desktop-app/src/renderer/src/lib/platform.ts`: `isElectron`, `isCapacitor`, `canShareScreen`, `hasHotkeys`, `hasUpdater`, `hasWindowControls`.
+- WASAPI (`audioLoopback`), `desktopCapturer`, `electron-updater`, Discord RPC e atalhos globais ficam em `desktop-app/src/main`. Não importe `@capacitor/*` nem pacotes do Electron dentro de `desktop-app/package.json` dependencies: o instalador e o APK não podem carregar o runtime um do outro.
+- Tela (`getDisplayMedia` / seletor de fontes) só existe quando `canShareScreen()` é verdadeiro. No Android a publicação é câmera e microfone.
+
+```tsx
+// Quebra o WebView: electronAPI não existe no Android.
+await window.electronAPI.openExternal(url)
+
+// O guard já está em lib/platform.ts e em openLink.
+if (isElectron()) void window.electronAPI?.openExternal(url)
+else window.open(url, '_blank', 'noopener,noreferrer')
+```
+
+Não há banco nem storage de objetos. Sala, perfil e chat vivem na memória do `signaling-server` e somem quando a sala esvazia.
+
+- Perfil: avatar WebP 96×96 em base64, cor e status, no próprio `join`.
+- Chat: no máximo 100 mensagens por sala. Texto até 2000 caracteres. Imagem só `data:image/webp;base64,`, até ~90 KB. O histórico descarta a imagem antiga e conserva o texto quando passa de ~600 KB.
+- WebSocket: `maxPayload` 128 KB. Qualquer mensagem que não seja `chat` continua no teto de 64 KB. Rate limit de 5 mensagens a cada 3 s por peer.
+- `GET /turn` troca `CF_TURN_KEY_ID` e `CF_TURN_API_TOKEN` por credencial efêmera. Sem essas variáveis, a resposta é só STUN.
