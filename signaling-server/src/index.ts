@@ -128,7 +128,15 @@ wss.on('connection', (socket) => {
           return
         }
         {
-          const result = hub.join(socket, message.roomId, message.peerId, message.displayName, message.profile, message.features)
+          const result = hub.join(
+            socket,
+            message.roomId,
+            message.peerId,
+            message.displayName,
+            message.profile,
+            message.features,
+            message.unlisted === true
+          )
           if (!result.ok) {
             socket.send(JSON.stringify({ type: 'error', message: result.error }))
           }
@@ -154,6 +162,12 @@ wss.on('connection', (socket) => {
         return
       case 'ping':
         socket.send(JSON.stringify({ type: 'pong' }))
+        return
+      case 'watch-rooms':
+        hub.watchRooms(socket)
+        return
+      case 'voice-state':
+        hub.voiceState(socket, message.speaking === true, message.muted === true)
         return
       default:
         socket.send(JSON.stringify({ type: 'error', message: 'Tipo de mensagem desconhecido.' }))

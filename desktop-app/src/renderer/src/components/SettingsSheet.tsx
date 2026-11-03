@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bell, Info, Keyboard, Mic, MonitorUp, UserRound, X } from 'lucide-react'
 import { DownloadApkButton } from '@renderer/components/ApkRelease'
@@ -7,10 +7,10 @@ import { ProfileFields } from '@renderer/components/ProfileFields'
 import { UpdateDialog, type UpdateStatus } from '@renderer/components/UpdateDialog'
 import { readCaptureBitrate, readCaptureFps, readCaptureResolution, readWebcamDeviceId, writeCapturePrefs, writeWebcamDeviceId } from '@renderer/lib/capture-prefs'
 import { readPreviews, writePreviews } from '@renderer/lib/chat'
-import { listOutputDevices, readDiscordClientId, readSinkId, writeDiscordClientId, writeSinkId } from '@renderer/lib/playback'
+import { applySink, listOutputDevices, readDiscordClientId, readSinkId, writeDiscordClientId, writeSinkId } from '@renderer/lib/playback'
 import { canShareScreen, hasHotkeys, hasUpdater, isElectron, useMobileLayout } from '@renderer/lib/platform'
-import { ensureVoiceOutput, isVoicePublished, readSensitivity, releaseVoiceCapture, useVoiceProcessing, writeSensitivity, type SuppressorMode } from '@renderer/lib/suppressor'
-import { attachLocalMeter, detachLocalMeter, listInputDevices, readInputDeviceId, useMicLevel, writeInputDeviceId } from '@renderer/lib/voice'
+import { ensureVoiceOutput, isVoicePublished, releaseVoiceCapture, useVoiceProcessing, voiceOutput, writeAutoSensitivity, writeInputGain, writeSensitivity, type SuppressorMode } from '@renderer/lib/suppressor'
+import { attachLocalMeter, detachLocalMeter, listInputDevices, readInputDeviceId, useMicLevel, useOutputVolume, writeInputDeviceId, writeOutputVolume } from '@renderer/lib/voice'
 import { previewSound, readSoundPrefs, writeSoundEnabled, writeSoundVolume, type SoundPreview } from '@renderer/utils/soundEffects'
 import { RESOLUTION_OPTIONS, VIDEO_BITRATES, type ResolutionPreset, type UserProfile } from '@renderer/types'
 
@@ -83,14 +83,74 @@ function ProfilePanel({ profile, onSave }: { profile: UserProfile; onSave: (prof
   )
 }
 
+function SensitivityBar({
+  value,
+  level,
+  disabled,
+  onChange
+}: {
+  value: number
+  level: number
+  disabled: boolean
+  onChange: (value: number) => void
+}) {
+  const barRef = useRef<HTMLDivElement>(null)
+  function seek(clientX: number): void {
+    const rect = barRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0 || disabled) return
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    onChange(Math.round(ratio * 100))
+  }
+  return (
+    <div
+      ref={barRef}
+      role="slider"
+      aria-label="Sensibilidade de entrada"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={value}
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      className={`relative mt-3 h-8 touch-none ${disabled ? 'pointer-events-none opacity-40' : 'cursor-pointer'}`}
+      onPointerDown={(event) => {
+        if (disabled) return
+        event.currentTarget.setPointerCapture(event.pointerId)
+        seek(event.clientX)
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) seek(event.clientX)
+      }}
+      onKeyDown={(event) => {
+        if (disabled) return
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') onChange(Math.max(0, value - 2))
+        if (event.key === 'ArrowRight' || event.key === 'ArrowUp') onChange(Math.min(100, value + 2))
+      }}
+    >
+      <div className="absolute inset-x-0 top-1/2 flex h-2 -translate-y-1/2 overflow-hidden rounded-full">
+        <div className="h-full bg-amber-400" style={{ width: `${value}%` }} />
+        <div className="h-full flex-1 bg-emerald-500" />
+      </div>
+      <div
+        className="pointer-events-none absolute top-1/2 h-2 -translate-y-1/2 rounded-l-full bg-white/45"
+        style={{ width: `${Math.min(100, Math.round(level * 100))}%` }}
+      />
+      <div
+        className="pointer-events-none absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_2px_rgba(0,0,0,0.35)]"
+        style={{ left: `${value}%` }}
+      />
+    </div>
+  )
+}
+
 function VoicePanel({ voiceLive, onApplyVoice }: { voiceLive: boolean; onApplyVoice: (mode: SuppressorMode) => void }) {
   const processing = useVoiceProcessing()
   const level = useMicLevel()
+  const outputVolume = useOutputVolume()
   const [inputId, setInputId] = useState(readInputDeviceId)
   const [inputs, setInputs] = useState<Array<{ deviceId: string; label: string }>>([])
   const [sinkId, setSinkId] = useState(readSinkId)
   const [outputs, setOutputs] = useState<Array<{ deviceId: string; label: string }>>([])
-  const [sensitivity, setSensitivity] = useState(readSensitivity)
+  const [testing, setTesting] = useState(false)
 
   useEffect(() => {
     let cancel = false
@@ -133,6 +193,20 @@ function VoicePanel({ voiceLive, onApplyVoice }: { voiceLive: boolean; onApplyVo
     }
   }, [voiceLive, processing.mode, inputId])
 
+  useEffect(() => {
+    if (!testing) return
+    const element = document.createElement('audio')
+    element.autoplay = true
+    const stream = voiceOutput()
+    if (stream) element.srcObject = stream
+    void element.play().catch(() => undefined)
+    void applySink(element, sinkId)
+    return () => {
+      element.pause()
+      element.srcObject = null
+    }
+  }, [testing, sinkId, processing.mode, inputId])
+
   const modes: Array<{ id: SuppressorMode; label: string }> = [
     { id: 'rnnoise', label: 'Padrão (RNNoise IA)' },
     { id: 'browser', label: 'Básico (Navegador)' },
@@ -142,51 +216,89 @@ function VoicePanel({ voiceLive, onApplyVoice }: { voiceLive: boolean; onApplyVo
   return (
     <div>
       <h2 className="text-xl font-semibold text-ink">Voz e áudio</h2>
-      <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-muted">
-        Dispositivo de entrada
-        <select
-          value={inputId}
-          aria-label="Microfone"
-          onChange={(event) => {
-            const next = event.target.value
-            setInputId(next)
-            writeInputDeviceId(next)
-            void onApplyVoice(processing.mode)
-          }}
-          className={fieldClass}
-        >
-          <option value="">Padrão do sistema</option>
-          {inputs.map((device) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <p className="mt-3 text-xs text-muted">Teste de voz</p>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/40">
-        <div className="h-full rounded-full bg-[#23a559]" style={{ width: `${Math.round(level * 100)}%` }} />
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+          Dispositivo de entrada
+          <select
+            value={inputId}
+            aria-label="Microfone"
+            onChange={(event) => {
+              const next = event.target.value
+              setInputId(next)
+              writeInputDeviceId(next)
+              void onApplyVoice(processing.mode)
+            }}
+            className={fieldClass}
+          >
+            <option value="">Padrão do sistema</option>
+            {inputs.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+          Volume de entrada
+          <span className="mt-2 flex items-center gap-2">
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={Math.round(processing.inputGain * 100)}
+              aria-label="Volume de entrada"
+              onChange={(event) => writeInputGain(Number(event.target.value) / 100)}
+              className="w-full"
+            />
+            <span className="w-12 text-right text-xs tabular-nums text-ink">{Math.round(processing.inputGain * 100)}%</span>
+          </span>
+        </label>
       </div>
-      <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-muted">
-        Dispositivo de saída
-        <select
-          value={sinkId}
-          aria-label="Dispositivo de saída"
-          onChange={(event) => {
-            const next = event.target.value
-            setSinkId(next)
-            writeSinkId(next)
-          }}
-          className={fieldClass}
-        >
-          <option value="">Padrão do sistema</option>
-          {outputs.map((device) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <button
+        type="button"
+        aria-pressed={testing}
+        onClick={() => setTesting((current) => !current)}
+        className={`mt-4 h-10 rounded-lg px-3 text-sm font-semibold ${testing ? 'bg-emerald-600 text-white' : 'bg-app text-ink ring-1 ring-line'}`}
+      >
+        {testing ? 'Parar teste' : 'Testar microfone (ouvir minha voz)'}
+      </button>
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+          Dispositivo de saída
+          <select
+            value={sinkId}
+            aria-label="Dispositivo de saída"
+            onChange={(event) => {
+              const next = event.target.value
+              setSinkId(next)
+              writeSinkId(next)
+            }}
+            className={fieldClass}
+          >
+            <option value="">Padrão do sistema</option>
+            {outputs.map((device) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+          Volume de saída
+          <span className="mt-2 flex items-center gap-2">
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={Math.round(outputVolume * 100)}
+              aria-label="Volume de saída"
+              onChange={(event) => writeOutputVolume(Number(event.target.value) / 100)}
+              className="w-full"
+            />
+            <span className="w-12 text-right text-xs tabular-nums text-ink">{Math.round(outputVolume * 100)}%</span>
+          </span>
+        </label>
+      </div>
       <p className="mt-5 text-xs font-semibold uppercase tracking-wide text-muted">Supressão de ruído</p>
       <div className="mt-2 grid gap-2">
         {modes.map((mode) => (
@@ -204,24 +316,24 @@ function VoicePanel({ voiceLive, onApplyVoice }: { voiceLive: boolean; onApplyVo
       {processing.degraded && processing.mode === 'rnnoise' ? (
         <p className="mt-2 text-xs text-warn">O RNNoise não carregou neste aparelho. O microfone está no filtro básico.</p>
       ) : null}
-      <label className="mt-5 block text-xs font-semibold uppercase tracking-wide text-muted">
-        Sensibilidade do microfone
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={sensitivity}
-          disabled={processing.mode === 'off'}
-          aria-label="Sensibilidade do microfone"
-          onChange={(event) => {
-            const next = Number(event.target.value)
-            setSensitivity(next)
-            writeSensitivity(next)
-          }}
-          className="mt-2 w-full disabled:opacity-40"
+      <div className={`mt-5 ${processing.mode === 'off' ? 'pointer-events-none opacity-40' : ''}`}>
+        <label className="flex items-center justify-between gap-3 text-sm text-ink">
+          Ajustar automaticamente a sensibilidade de entrada
+          <input
+            type="checkbox"
+            checked={processing.auto}
+            disabled={processing.mode === 'off'}
+            onChange={(event) => writeAutoSensitivity(event.target.checked)}
+            className="h-4 w-4 accent-blurple"
+          />
+        </label>
+        <SensitivityBar
+          value={processing.sensitivity}
+          level={level}
+          disabled={processing.mode === 'off' || processing.auto}
+          onChange={writeSensitivity}
         />
-      </label>
-      <p className="mt-1 text-[11px] text-muted">No modo estúdio o gate fica aberto.</p>
+      </div>
     </div>
   )
 }
@@ -463,17 +575,34 @@ function HotkeyPanel() {
   return (
     <div>
       <h2 className="text-xl font-semibold text-ink">Atalhos de teclado</h2>
-      <p className="mt-2 text-sm text-muted">Use Ctrl, Alt ou Shift junto com outra tecla. Esc limpa mute e ensurdecer.</p>
       {rows.map(([action, label, value]) => (
         <div key={action} className="mt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
-          <button
-            type="button"
-            onClick={() => setListening(action)}
-            className="mt-2 h-10 w-full rounded-lg bg-app text-sm font-semibold text-ink ring-1 ring-line"
-          >
-            {listening === action ? 'Pressione o atalho…' : value}
-          </button>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setListening(action)}
+              className="h-10 flex-1 rounded-lg bg-app text-sm font-semibold text-ink ring-1 ring-line"
+            >
+              {listening === action ? 'Pressione o atalho…' : value}
+            </button>
+            <button
+              type="button"
+              aria-label={`Limpar atalho de ${label}`}
+              onClick={() => {
+                setListening(null)
+                void window.electronAPI?.setHotkeyFor?.(action, '')?.then((ok) => {
+                  if (ok) {
+                    setHotkeys((current) => ({ ...current, [action]: '' }))
+                    setProblem(null)
+                  } else setProblem('O sistema não aceitou limpar esse atalho.')
+                })
+              }}
+              className="h-10 w-10 rounded-lg bg-app text-sm text-muted ring-1 ring-line hover:text-ink"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       ))}
       {problem ? <p className="mt-2 text-sm text-danger">{problem}</p> : null}

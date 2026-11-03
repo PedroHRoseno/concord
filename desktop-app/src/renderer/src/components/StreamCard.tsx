@@ -107,6 +107,13 @@ export function StreamCard({
             canvas={canvas}
             details={detailsOf(entry, audioRoute)}
             webcams={webcams}
+            poster={{
+              name: entry.name,
+              avatar: entry.avatarDataUrl,
+              accent: entry.accentColor,
+              peerId: entry.peerId,
+              webcam: entry.meta.streamType === 'webcam'
+            }}
             onVolume={onVolume}
             onMuted={onMuted}
             onFocus={onFocus}

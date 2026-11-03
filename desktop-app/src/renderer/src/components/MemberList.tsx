@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Monitor, MoreHorizontal } from 'lucide-react'
+import { Eye, EyeOff, Monitor } from 'lucide-react'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Avatar } from '@renderer/components/Avatar'
@@ -30,6 +30,7 @@ interface MemberListProps {
   unread: number
   chat: ReactNode
   sheet?: boolean
+  booting?: boolean
 }
 
 function VoiceMenu({ name }: { name: string }) {
@@ -96,7 +97,8 @@ export function MemberList({
   onTab,
   unread,
   chat,
-  sheet = false
+  sheet = false,
+  booting = false
 }: MemberListProps) {
   const [width, setWidth] = useState(readSidebarWidth)
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -135,8 +137,6 @@ export function MemberList({
       onEditSelf()
       return
     }
-    const live = person.streams.some((item) => item.meta.streamType === 'screen' || item.meta.streamType === 'webcam')
-    if (!person.hasVoice && !live) return
     const widthPx = 256
     const heightPx = 280
     setMenu({
@@ -211,8 +211,18 @@ export function MemberList({
           </button>
         ))}
       </div>
+      {booting && tab === 'room' ? (
+        <div className="space-y-2 px-3 py-2">
+          {Array.from({ length: 4 }, (_, index) => (
+            <div key={index} className="flex animate-pulse items-center gap-2">
+              <span className="h-7 w-7 rounded-full bg-white/10" />
+              <span className="h-3 flex-1 rounded bg-white/10" />
+            </div>
+          ))}
+        </div>
+      ) : null}
       {tab === 'chat' ? chat : null}
-      <ul className={`min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 pb-3 ${tab === 'room' ? '' : 'hidden'}`}>
+      <ul className={`min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2 pb-3 transition-opacity duration-300 ${tab === 'room' ? '' : 'hidden'} ${booting ? 'pointer-events-none opacity-0' : 'opacity-100'}`}>
         {people.map((person) => {
           const screen = person.streams.find((item) => item.meta.streamType === 'screen')
           const webcam = person.streams.find((item) => item.meta.streamType === 'webcam')
@@ -221,7 +231,19 @@ export function MemberList({
           return (
             <li
               key={person.peerId}
-              className="group rounded-lg px-2 py-1.5 hover:bg-white/[0.04]"
+              role="button"
+              tabIndex={0}
+              className="group cursor-pointer rounded-lg px-2 py-1.5 transition-all hover:bg-white/[0.06] active:scale-[0.99]"
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest('button, a, input, label')) return
+                openMenu(person, event.clientX, event.clientY)
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                const rect = event.currentTarget.getBoundingClientRect()
+                openMenu(person, rect.left, rect.bottom)
+              }}
               onContextMenu={(event) => {
                 event.preventDefault()
                 openMenu(person, event.clientX, event.clientY)
@@ -237,32 +259,12 @@ export function MemberList({
                   size="sm"
                 />
                 <span className="min-w-0 flex-1">
-                  {person.self ? (
-                    <button type="button" onClick={onEditSelf} className="block max-w-full truncate text-left text-sm font-semibold text-ink" title="Editar perfil">
-                      {person.name}
-                    </button>
-                  ) : (
-                    <p className="truncate text-sm font-semibold text-ink">{person.name}</p>
-                  )}
+                  <p className="truncate text-sm font-semibold text-ink">{person.name}</p>
                   {person.profile.customStatus ? <p className="truncate text-xs text-muted">{person.profile.customStatus}</p> : null}
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
                   {screen ? <span className="rounded bg-live/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-live">AO VIVO</span> : null}
                   {webcam ? <span className="rounded bg-blurple/20 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-blurple">CÂMERA</span> : null}
-                  {!person.self && (person.hasVoice || liveStreams.length > 0) ? (
-                    <button
-                      type="button"
-                      title="Opções"
-                      aria-label={`Opções de ${person.name}`}
-                      onClick={(event) => {
-                        const rect = event.currentTarget.getBoundingClientRect()
-                        openMenu(person, rect.left, rect.bottom + 4)
-                      }}
-                      className={`inline-flex h-6 w-6 items-center justify-center rounded text-muted hover:bg-white/10 hover:text-ink ${sheet ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </button>
-                  ) : null}
                 </span>
               </div>
               {screen ? (
@@ -272,7 +274,11 @@ export function MemberList({
                   {!person.self ? (
                     <button
                       type="button"
-                      onClick={() => (screen.watching ? onUnwatch(screen.meta.streamId) : onWatch(screen.meta.streamId))}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (screen.watching) onUnwatch(screen.meta.streamId)
+                        else onWatch(screen.meta.streamId)
+                      }}
                       className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-ink hover:bg-white/15"
                     >
                       {screen.watching ? 'Sair' : 'Assistir'}
@@ -284,7 +290,11 @@ export function MemberList({
                 <div className="mt-1 flex justify-end">
                   <button
                     type="button"
-                    onClick={() => (webcam.watching ? onUnwatch(webcam.meta.streamId) : onWatch(webcam.meta.streamId))}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      if (webcam.watching) onUnwatch(webcam.meta.streamId)
+                      else onWatch(webcam.meta.streamId)
+                    }}
                     className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-muted hover:bg-white/10 hover:text-ink"
                   >
                     {webcam.watching ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}

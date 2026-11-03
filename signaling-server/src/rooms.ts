@@ -13,6 +13,7 @@ import {
   type PublicProfile,
   type ServerMessage,
   type SignalPayload,
+  type RoomCard,
   type StreamMeta,
   type WatcherInfo
 } from './types.js'
@@ -28,7 +29,17 @@ export interface Member {
   isAlive: boolean
   features: Set<Feature>
   chatTimes: number[]
+  speaking: boolean
+  muted: boolean
 }
+
+const PINNED_ROOMS: Array<{ roomId: string; label: string }> = [
+  { roomId: 'geral', label: 'Sala geral' },
+  { roomId: 'jogatina', label: 'Jogatina' },
+  { roomId: 'afk', label: 'AFK' }
+]
+const PINNED_IDS = new Set(PINNED_ROOMS.map((room) => room.roomId))
+const DIRECTORY_LIMIT = 48_000
 
 const HISTORY_LIMIT = 100
 const HISTORY_IMAGE_BYTES = 600_000
@@ -45,6 +56,9 @@ export class RoomHub {
   private rooms = new Map<string, Map<string, Member>>()
   private bySocket = new Map<WebSocket, Member>()
   private history = new Map<string, ChatMessage[]>()
+  private unlisted = new Map<string, boolean>()
+  private directoryWatchers = new Set<WebSocket>()
+  private directoryTimer: ReturnType<typeof setTimeout> | null = null
 
   roomCount(): number {
     return this.rooms.size
@@ -56,7 +70,8 @@ export class RoomHub {
     peerId: string,
     displayName: string,
     profile: unknown,
-    features?: unknown
+    features?: unknown,
+    unlisted?: boolean
   ): { ok: true } | { ok: false; error: string } {
     if (!ROOM_RE.test(roomId)) {
       return { ok: false, error: 'ID da sala inválido. Use letras, números, _ e - (até 64).' }
@@ -76,6 +91,7 @@ export class RoomHub {
     if (!room) {
       room = new Map()
       this.rooms.set(roomId, room)
+      this.unlisted.set(roomId, PINNED_IDS.has(roomId) ? false : unlisted === true)
     }
     const existing = room.get(peerId)
     if (existing) {
@@ -99,7 +115,9 @@ export class RoomHub {
       watchers: new Map(),
       isAlive: true,
       features: feats,
-      chatTimes: []
+      chatTimes: [],
+      speaking: false,
+      muted: false
     }
     room.set(peerId, member)
     this.bySocket.set(socket, member)
@@ -112,10 +130,26 @@ export class RoomHub {
       this.send(socket, { type: 'chat-history', messages: this.history.get(roomId) ?? [] })
     }
     console.log(`[${roomId}] ${name} entrou (${room.size})`)
+    this.touchDirectory()
     return { ok: true }
   }
 
+  watchRooms(socket: WebSocket): void {
+    this.directoryWatchers.add(socket)
+    this.send(socket, { type: 'rooms', rooms: this.publicRooms() })
+  }
+
+  voiceState(socket: WebSocket, speaking: boolean, muted: boolean): void {
+    const member = this.bySocket.get(socket)
+    if (!member) return
+    if (member.speaking === speaking && member.muted === muted) return
+    member.speaking = speaking
+    member.muted = muted
+    this.touchDirectory()
+  }
+
   leave(socket: WebSocket): void {
+    this.directoryWatchers.delete(socket)
     const member = this.bySocket.get(socket)
     if (!member) return
     this.bySocket.delete(socket)
@@ -128,7 +162,9 @@ export class RoomHub {
     if (room.size === 0) {
       this.rooms.delete(member.roomId)
       this.history.delete(member.roomId)
+      this.unlisted.delete(member.roomId)
     }
+    this.touchDirectory()
   }
 
   chat(socket: WebSocket, text: unknown, image: unknown): void {
@@ -192,6 +228,7 @@ export class RoomHub {
     if (!member.watchers.has(streamId)) member.watchers.set(streamId, new Set())
     this.broadcast(member.roomId, { type: 'stream-meta', peerId: member.peerId, streamId, meta }, undefined, isVoiceId(streamId))
     console.log(`[${member.roomId}] ${member.displayName} transmitindo ${meta.streamType}`)
+    this.touchDirectory()
   }
 
   updateProfile(socket: WebSocket, displayName: unknown, profile: unknown): void {
@@ -208,6 +245,7 @@ export class RoomHub {
       displayName: member.displayName,
       profile: member.profile
     })
+    this.touchDirectory()
   }
 
   signal(socket: WebSocket, to: string, payload: unknown): void {
@@ -294,6 +332,7 @@ export class RoomHub {
       isVoiceId(streamId)
     )
     console.log(`[${member.roomId}] ${member.displayName} parou ${streamId}`)
+    this.touchDirectory()
   }
 
   private dropViewer(room: Map<string, Member>, peerId: string): void {
@@ -340,6 +379,56 @@ export class RoomHub {
       streams: [...member.streams.values()].filter((s) => viewerHasVoice || s.streamType !== 'voice'),
       watchers
     }
+  }
+
+  private touchDirectory(): void {
+    if (this.directoryTimer) return
+    this.directoryTimer = setTimeout(() => {
+      this.directoryTimer = null
+      const message: ServerMessage = { type: 'rooms-updated', rooms: this.publicRooms() }
+      for (const socket of this.directoryWatchers) this.send(socket, message)
+    }, 300)
+  }
+
+  private publicRooms(): RoomCard[] {
+    const cards = new Map<string, RoomCard>()
+    for (const pin of PINNED_ROOMS) {
+      cards.set(pin.roomId, { roomId: pin.roomId, label: pin.label, members: [], activity: { screens: [], cameras: 0 } })
+    }
+    for (const [roomId, room] of this.rooms) {
+      if (this.unlisted.get(roomId) && !PINNED_IDS.has(roomId)) continue
+      const label = PINNED_ROOMS.find((pin) => pin.roomId === roomId)?.label ?? roomId
+      const members = [...room.values()].map((member) => ({
+        peerId: member.peerId,
+        name: member.displayName,
+        avatar: member.profile.avatarDataUrl,
+        accentColor: member.profile.accentColor,
+        statusText: member.profile.customStatus,
+        isSpeaking: member.speaking,
+        isMuted: member.muted
+      }))
+      const screens: Array<{ sourceName: string }> = []
+      let cameras = 0
+      for (const member of room.values()) {
+        for (const stream of member.streams.values()) {
+          if (stream.streamType === 'screen') screens.push({ sourceName: stream.sourceName })
+          if (stream.streamType === 'webcam') cameras += 1
+        }
+      }
+      cards.set(roomId, { roomId, label, members, activity: { screens, cameras } })
+    }
+    const listed = [...cards.values()]
+    let payload = JSON.stringify(listed)
+    if (payload.length <= DIRECTORY_LIMIT) return listed
+    for (let roomIndex = listed.length - 1; roomIndex >= 0 && payload.length > DIRECTORY_LIMIT; roomIndex -= 1) {
+      const members = listed[roomIndex].members
+      for (let memberIndex = members.length - 1; memberIndex >= 0 && payload.length > DIRECTORY_LIMIT; memberIndex -= 1) {
+        if (!members[memberIndex].avatar) continue
+        members[memberIndex] = { ...members[memberIndex], avatar: '' }
+        payload = JSON.stringify(listed)
+      }
+    }
+    return listed
   }
 
   private require(socket: WebSocket): Member | null {

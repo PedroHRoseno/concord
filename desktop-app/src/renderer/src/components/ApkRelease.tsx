@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Smartphone } from 'lucide-react'
 import { openLink } from '@renderer/lib/chat'
 import { isCapacitor, isElectron } from '@renderer/lib/platform'
 
@@ -71,9 +72,10 @@ export function DownloadApkButton() {
     <button
       type="button"
       onClick={() => openLink(release.url)}
-      className="text-xs text-muted underline-offset-2 hover:text-ink hover:underline"
+      className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-muted hover:bg-white/10 hover:text-ink"
     >
-      Baixar APK Android
+      <Smartphone className="h-3.5 w-3.5" aria-hidden="true" />
+      APK Android
     </button>
   )
 }

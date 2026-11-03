@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import logo from '@renderer/assets/logo.png'
 import { AndroidUpdateNotice } from '@renderer/components/ApkRelease'
 import { Lobby } from '@renderer/components/Lobby'
 import { QuickShare } from '@renderer/components/QuickShare'
@@ -48,10 +49,18 @@ function MainApp() {
         status={room.phase === 'room' ? room.status : undefined}
         roomId={room.phase === 'room' ? room.self?.roomId : undefined}
         displayName={room.phase === 'room' ? room.self?.displayName : undefined}
-        peerCount={room.phase === 'room' ? room.peers.length + 1 : undefined}
+        avatar={room.phase === 'room' ? room.profile.avatarDataUrl : undefined}
+        accent={room.phase === 'room' ? room.profile.accentColor : undefined}
+        peerId={room.phase === 'room' ? room.self?.peerId : undefined}
+        rooms={room.phase === 'room' ? room.rooms : undefined}
+        onSwitchRoom={room.switchRoom}
       />
       <div className="min-h-0 flex-1">
-        {room.phase === 'lobby' ? (
+        {room.phase === 'room' && room.status === 'connecting' ? (
+          <div className="flex h-full items-center justify-center bg-app">
+            <img src={logo} alt="" className="h-16 w-16 animate-pulse" />
+          </div>
+        ) : room.phase === 'lobby' ? (
           <Lobby error={room.error} onJoin={room.join} onDismissError={room.dismissError} />
         ) : (
           <Room room={room} />

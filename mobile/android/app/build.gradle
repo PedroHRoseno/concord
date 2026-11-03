@@ -4,7 +4,7 @@ apply plugin: 'com.android.application'
 // vira cast do retorno do setter, que é null, e o Gradle aborta com "Value is null".
 def rawVersionCode = findProperty("versionCode")?.toString()?.trim()
 def concordVersionCode = rawVersionCode?.isInteger() ? rawVersionCode.toInteger() : 1
-def concordVersionName = findProperty("versionName")?.toString()?.trim() ?: "1.7.0"
+def concordVersionName = findProperty("versionName")?.toString()?.trim() ?: "1.8.0"
 
 android {
     namespace = "com.concord.app"

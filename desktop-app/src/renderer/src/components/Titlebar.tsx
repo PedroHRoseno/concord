@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Copy, Minus, RefreshCw, Square, X } from 'lucide-react'
+import { ChevronDown, Copy, Minus, RefreshCw, Square, X } from 'lucide-react'
 import logo from '@renderer/assets/logo.png'
-import type { ConnectionStatus } from '@renderer/types'
+import { Avatar } from '@renderer/components/Avatar'
+import { requestSettings } from '@renderer/lib/settings-bus'
+import type { ConnectionStatus, RoomCard } from '@renderer/types'
 import { DownloadApkButton } from '@renderer/components/ApkRelease'
 import { hasUpdater, hasWindowControls, useMobileLayout } from '@renderer/lib/platform'
 import { UpdateDialog, type UpdateStatus } from '@renderer/components/UpdateDialog'
@@ -24,7 +26,11 @@ interface TitlebarProps {
   status?: ConnectionStatus
   roomId?: string
   displayName?: string
-  peerCount?: number
+  avatar?: string
+  accent?: string
+  peerId?: string
+  rooms?: RoomCard[]
+  onSwitchRoom?: (roomId: string) => void
 }
 
 function WindowControls() {
@@ -68,8 +74,9 @@ function WindowControls() {
   )
 }
 
-export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarProps) {
+export function Titlebar({ status, roomId, displayName, avatar, accent, peerId, rooms = [], onSwitchRoom }: TitlebarProps) {
   const mobile = useMobileLayout()
+  const [roomsOpen, setRoomsOpen] = useState(false)
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [updateOpen, setUpdateOpen] = useState(false)
@@ -126,7 +133,43 @@ export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarPro
         <span className="text-sm font-semibold text-ink">Concord</span>
         {status ? <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${COLORS[status]}`} aria-hidden="true" /> : null}
         {status ? <span className="text-sm text-ink">{LABELS[status]}</span> : null}
-        {roomId ? <span className="truncate text-sm text-muted">Sala {roomId}</span> : null}
+        {roomId ? (
+          <span className="relative">
+            <button
+              type="button"
+              onClick={() => setRoomsOpen((open) => !open)}
+              className="inline-flex max-w-52 items-center gap-1 truncate rounded-md px-2 py-1 text-sm text-muted hover:bg-white/10 hover:text-ink"
+            >
+              {rooms.find((room) => room.roomId === roomId)?.label ?? roomId}
+              <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            </button>
+            {roomsOpen ? (
+              <div className="absolute left-0 top-full z-[9999] mt-1 w-72 rounded-lg bg-[#111214] p-2 text-ink shadow-2xl ring-1 ring-white/10">
+                {rooms
+                  .filter((room) => room.roomId !== roomId)
+                  .map((room) => (
+                    <button
+                      key={room.roomId}
+                      type="button"
+                      onClick={() => {
+                        setRoomsOpen(false)
+                        onSwitchRoom?.(room.roomId)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-white/10"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold">{room.label}</span>
+                        <span className="block truncate text-[11px] text-muted">
+                          {room.members.length === 0 ? 'Vazia' : room.members.map((member) => member.name).join(', ')}
+                        </span>
+                      </span>
+                      <span className="text-xs text-muted">{room.members.length}</span>
+                    </button>
+                  ))}
+              </div>
+            ) : null}
+          </span>
+        ) : null}
       </div>
       <div className="no-drag flex h-full items-center gap-3 pr-2 text-sm text-muted">
         {version ? <span>v{version}</span> : null}
@@ -157,11 +200,15 @@ export function Titlebar({ status, roomId, displayName, peerCount }: TitlebarPro
           </button>
         ) : null}
         {updateOpen ? <UpdateDialog status={update} onClose={() => setUpdateOpen(false)} /> : null}
-        {displayName ? <span className="max-w-40 truncate">{displayName}</span> : null}
-        {typeof peerCount === 'number' ? (
-          <span>
-            {peerCount} {peerCount === 1 ? 'pessoa' : 'pessoas'}
-          </span>
+        {displayName ? (
+          <button
+            type="button"
+            onClick={() => requestSettings('profile')}
+            className="inline-flex max-w-44 items-center gap-1.5 rounded-full px-2.5 py-1 text-sm text-ink hover:bg-white/10"
+          >
+            <Avatar name={displayName} src={avatar} accent={accent} peerId={peerId} size="xs" />
+            <span className="truncate">{displayName}</span>
+          </button>
         ) : null}
       </div>
       <WindowControls />

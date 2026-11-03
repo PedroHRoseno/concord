@@ -2,6 +2,20 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [1.8.0] - 2026-11-03
+
+### Adicionado
+
+- Anel verde de fala no avatar, medido depois do gate no microfone local e na voz recebida.
+- Volume de entrada e de saída, teste do microfone e barra de sensibilidade com zona cortada e zona transmitida.
+- Lista de salas ao vivo no lobby e troca de sala pelo nome no topo, sem banco.
+- Sala oculta, que não aparece na lista.
+
+### Melhorado
+
+- Cards da sala abrem o menu no clique. O header mostra o perfil e o botão do APK, sem a contagem repetida de pessoas.
+- A entrada com auto-join mostra a logo até a sala conectar. A sidebar usa skeletons e o vídeo aparece no primeiro quadro.
+
 ## [1.7.0] - 2026-11-03
 
 ### Adicionado

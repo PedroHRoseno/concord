@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react'
 import { applySink, readSinkId, subscribeSink } from '@renderer/lib/playback'
-import { pumpSuppressor } from '@renderer/lib/suppressor'
+import { pumpSuppressor, readVoiceProbe } from '@renderer/lib/suppressor'
 
 const PREFS_KEY = 'concord.voice.prefs'
 const INPUT_KEY = 'concord.voice.input'
+const OUTPUT_KEY = 'concord.voice.outputGain'
 const MAX_GAIN = 2
 const ON_LEVEL = 0.02
 const OFF_LEVEL = 0.012
@@ -40,14 +41,61 @@ let timer: number | null = null
 let sinkUnsubscribe: (() => void) | null = null
 
 const remotes = new Map<string, RemoteVoice>()
-let local: { peerId: string; source: MediaStreamAudioSourceNode; meter: Meter } | null = null
+let localPeerId: string | null = null
+let localSpoke = false
+let localLoud = 0
+let outputVolume = readStoredOutput()
 
 const speaking = new Set<string>()
 const speakingListeners = new Set<() => void>()
 const prefsListeners = new Set<() => void>()
 const levelListeners = new Set<() => void>()
 let prefsVersion = 0
+let outputVersion = 0
 let micLevel = 0
+const outputListeners = new Set<() => void>()
+
+function readStoredOutput(): number {
+  try {
+    const value = Number(localStorage.getItem(OUTPUT_KEY))
+    if (Number.isFinite(value)) return Math.min(MAX_GAIN, Math.max(0, value))
+  } catch {
+    /* o volume padrão continua valendo */
+  }
+  return 1
+}
+
+function applyMaster(): void {
+  if (!master) return
+  master.gain.value = deafened ? 0 : outputVolume
+}
+
+export function readOutputVolume(): number {
+  return outputVolume
+}
+
+export function writeOutputVolume(value: number): void {
+  outputVolume = Math.min(MAX_GAIN, Math.max(0, Number.isFinite(value) ? value : 1))
+  try {
+    localStorage.setItem(OUTPUT_KEY, String(outputVolume))
+  } catch {
+    /* o volume vale nesta sessão */
+  }
+  applyMaster()
+  outputVersion += 1
+  for (const listener of outputListeners) listener()
+}
+
+export function useOutputVolume(): number {
+  useSyncExternalStore(
+    (listener) => {
+      outputListeners.add(listener)
+      return () => outputListeners.delete(listener)
+    },
+    () => outputVersion
+  )
+  return outputVolume
+}
 
 function readAllPrefs(): Record<string, PeerPrefs> {
   try {
@@ -151,7 +199,7 @@ function audioContext(): AudioContext {
   }
   ctx = new AudioContext({ latencyHint: 'interactive' })
   master = ctx.createGain()
-  master.gain.value = deafened ? 0 : 1
+  applyMaster()
   master.connect(ctx.destination)
   void applySink(ctx, readSinkId())
   sinkUnsubscribe?.()
@@ -174,7 +222,6 @@ function sample(meter: Meter, key: string, now: number, silenced: boolean): void
   let sum = 0
   for (let i = 0; i < meter.data.length; i++) sum += meter.data[i] * meter.data[i]
   const rms = Math.sqrt(sum / meter.data.length)
-  if (local && key === local.peerId) publishLevel(rms)
   const threshold = meter.speaking ? OFF_LEVEL : ON_LEVEL
   if (!silenced && rms > threshold) meter.lastLoud = now
   const active = !silenced && now - meter.lastLoud < HOLD_MS
@@ -187,7 +234,17 @@ function sample(meter: Meter, key: string, now: number, silenced: boolean): void
 function tick(): void {
   const now = performance.now()
   pumpSuppressor()
-  if (local) sample(local.meter, local.peerId, now, false)
+  if (localPeerId) {
+    const probe = readVoiceProbe()
+    publishLevel(probe.preRms)
+    const threshold = localSpoke ? OFF_LEVEL : ON_LEVEL
+    if (probe.transmitting && probe.postRms > threshold) localLoud = now
+    const active = probe.transmitting && now - localLoud < HOLD_MS
+    if (active !== localSpoke) {
+      localSpoke = active
+      setSpeaking(localPeerId, active)
+    }
+  }
   for (const remote of remotes.values()) sample(remote.meter, remote.peerId, now, false)
 }
 
@@ -197,7 +254,7 @@ function ensureTimer(): void {
 }
 
 function stopTimerIfIdle(): void {
-  if (timer === null || local || remotes.size > 0) return
+  if (timer === null || localPeerId || remotes.size > 0) return
   window.clearInterval(timer)
   timer = null
 }
@@ -231,23 +288,20 @@ export async function listInputDevices(): Promise<Array<{ deviceId: string; labe
     .map((device, index) => ({ deviceId: device.deviceId, label: device.label || `Microfone ${index + 1}` }))
 }
 
-/** Mede o microfone local (anel verde) sem ligá-lo à saída, para não gerar eco. */
-export function attachLocalMeter(peerId: string, stream: MediaStream): void {
-  detachLocalMeter()
-  const context = audioContext()
-  const source = context.createMediaStreamSource(stream)
-  const meter = makeMeter(context)
-  source.connect(meter.analyser)
-  local = { peerId, source, meter }
+/** Liga o anel local ao RMS pós-gate do grafo de captura, sem reabrir o stream noutro contexto. */
+export function attachLocalMeter(peerId: string, _stream: MediaStream): void {
+  if (localPeerId && localPeerId !== peerId) setSpeaking(localPeerId, false)
+  localPeerId = peerId
+  localSpoke = false
+  localLoud = 0
   ensureTimer()
 }
 
 export function detachLocalMeter(): void {
-  if (!local) return
-  local.source.disconnect()
-  local.meter.analyser.disconnect()
-  setSpeaking(local.peerId, false)
-  local = null
+  if (!localPeerId) return
+  setSpeaking(localPeerId, false)
+  localPeerId = null
+  localSpoke = false
   publishLevel(0)
   stopTimerIfIdle()
 }
@@ -263,8 +317,8 @@ export function attachRemoteVoice(peerId: string, name: string, stream: MediaStr
   const source = context.createMediaStreamSource(stream)
   const gain = context.createGain()
   const meter = makeMeter(context)
-  source.connect(gain)
-  gain.connect(meter.analyser)
+  source.connect(meter.analyser)
+  meter.analyser.connect(gain)
   gain.connect(master as GainNode)
   // Contorno do bug do Chromium: áudio WebRTC só flui no AudioContext se também estiver em um elemento de mídia.
   const element = document.createElement('audio')
@@ -306,7 +360,7 @@ export function detachAllRemoteVoices(): void {
 
 export function setDeafened(value: boolean): void {
   deafened = value
-  if (master) master.gain.value = value ? 0 : 1
+  applyMaster()
 }
 
 export function closeVoice(): void {

@@ -325,11 +325,6 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
               <option value="system">Áudio do sistema</option>
               <option value="device">Dispositivo de entrada</option>
             </select>
-            {audioChoice === 'window' ? (
-              <span className="mt-1 block text-[11px] leading-4">
-                Só o programa da janela escolhida. No Chrome e no Edge entra o navegador inteiro, não uma aba. O som do Concord não entra.
-              </span>
-            ) : null}
             {audioChoice === 'system' ? (
               <span className="mt-1 block text-[11px] leading-4">
                 Tudo o que sai no alto-falante, menos o som do Concord.

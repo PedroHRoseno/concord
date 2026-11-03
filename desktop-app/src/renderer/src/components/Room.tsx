@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { bindSettings } from '@renderer/lib/settings-bus'
+import { useSpeaking } from '@renderer/lib/voice'
 import { Columns2, LayoutGrid, PanelBottom, PanelLeft, PanelRight, PanelRightClose, PictureInPicture, WandSparkles } from 'lucide-react'
 import { ChatPanel } from '@renderer/components/ChatPanel'
 import { ControlBar } from '@renderer/components/ControlBar'
@@ -46,6 +48,8 @@ export function Room({ room }: { room: RoomController }) {
   const [picker, setPicker] = useState<'start' | 'swap' | null>(null)
   const [webcamOpen, setWebcamOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [holdSidebar, setHoldSidebar] = useState(true)
+  const speaking = useSpeaking(room.self?.peerId ?? '')
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('voice')
   const [layout, setLayout] = useState<'grid' | 'focus'>('grid')
   const [cameraRail, setCameraRail] = useState<CameraRail>(() => readCameraRail())
@@ -127,6 +131,17 @@ export function Room({ room }: { room: RoomController }) {
     setSettingsOpen(true)
   }
 
+  useEffect(() => bindSettings(openSettings), [])
+
+  useEffect(() => {
+    room.setVoiceState(speaking, !room.micOn)
+  }, [speaking, room.micOn, room.setVoiceState])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setHoldSidebar(false), 1000)
+    return () => window.clearTimeout(timer)
+  }, [])
+
   function updateMix(id: string, patch: { volume?: number; muted?: boolean }): void {
     setMixes((current) => {
       const previous = current[id] ?? { volume: 1, muted: false }
@@ -139,8 +154,10 @@ export function Room({ room }: { room: RoomController }) {
   const peopleCount = room.self ? room.peers.length + 1 : room.peers.length
   const hasScreen = entries.some((entry) => entry.meta.streamType === 'screen')
   const hasWebcam = entries.some((entry) => entry.meta.streamType === 'webcam')
+  const settling = holdSidebar || !room.rosterReady
   const chat = room.self ? (
     <ChatPanel
+      booting={settling}
       messages={room.chatMessages}
       selfId={room.self.peerId}
       selfName={room.profile.displayName || room.self.displayName}
@@ -358,6 +375,7 @@ export function Room({ room }: { room: RoomController }) {
                   onTab={setSideTab}
                   unread={unreadChat}
                   chat={chat}
+                  booting={settling}
                 />
               </div>
             </div>
@@ -378,6 +396,7 @@ export function Room({ room }: { room: RoomController }) {
             onTab={setSideTab}
             unread={unreadChat}
             chat={chat}
+            booting={settling}
           />
           </div>
           )

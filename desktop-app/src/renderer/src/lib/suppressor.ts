@@ -7,6 +7,8 @@ const MODE_KEY = 'concord.voice.suppressor'
 const INPUT_KEY = 'concord.voice.input'
 const FALLBACK_KEY = 'concord.voice.suppressor.fallback'
 const SENSITIVITY_KEY = 'concord.voice.sensitivity'
+const AUTO_KEY = 'concord.voice.sensitivity.auto'
+const INPUT_GAIN_KEY = 'concord.voice.inputGain'
 
 export type SuppressorMode = 'rnnoise' | 'browser' | 'off'
 
@@ -19,10 +21,19 @@ interface Graph {
   destination: MediaStreamAudioDestinationNode | null
   rnnoise: RnnoiseWorkletNode | null
   gate: GainNode | null
+  inputGain: GainNode | null
   analyser: AnalyserNode | null
   data: Float32Array<ArrayBuffer> | null
+  postAnalyser: AnalyserNode | null
+  postData: Float32Array<ArrayBuffer> | null
   open: boolean
   extras: AudioNode[]
+}
+
+export interface VoiceProbe {
+  preRms: number
+  postRms: number
+  transmitting: boolean
 }
 
 let version = 0
@@ -39,6 +50,9 @@ let workletContext: AudioContext | null = null
 let workletReady: Promise<void> | null = null
 let wasmBinary: ArrayBuffer | null = null
 let onEnded: (() => void) | null = null
+let noiseFloor = 0.008
+let lastAutoWrite = 0
+let probe: VoiceProbe = { preRms: 0, postRms: 0, transmitting: false }
 
 const listeners = new Set<() => void>()
 
@@ -103,6 +117,52 @@ export function writeSensitivity(value: number): void {
   notify()
 }
 
+export function readAutoSensitivity(): boolean {
+  try {
+    return localStorage.getItem(AUTO_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function writeAutoSensitivity(value: boolean): void {
+  try {
+    localStorage.setItem(AUTO_KEY, value ? '1' : '0')
+  } catch {
+    /* a escolha vale nesta sessão */
+  }
+  notify()
+}
+
+export function readInputGain(): number {
+  try {
+    const value = Number(localStorage.getItem(INPUT_GAIN_KEY))
+    if (Number.isFinite(value)) return Math.min(2, Math.max(0, value))
+  } catch {
+    /* o ganho padrão continua valendo */
+  }
+  return 1
+}
+
+export function writeInputGain(value: number): void {
+  const next = Math.min(2, Math.max(0, value))
+  try {
+    localStorage.setItem(INPUT_GAIN_KEY, String(next))
+  } catch {
+    /* o ganho vale nesta sessão */
+  }
+  if (graph?.inputGain) graph.inputGain.gain.value = next
+  notify()
+}
+
+export function readVoiceProbe(): VoiceProbe {
+  return probe
+}
+
+export function voiceOutput(): MediaStream | null {
+  return graph?.output ?? null
+}
+
 export function isSuppressorDegraded(): boolean {
   return degraded
 }
@@ -119,9 +179,21 @@ export function setVoiceEndedHandler(handler: (() => void) | null): void {
   onEnded = handler
 }
 
-export function useVoiceProcessing(): { mode: SuppressorMode; sensitivity: number; degraded: boolean } {
+export function useVoiceProcessing(): {
+  mode: SuppressorMode
+  sensitivity: number
+  degraded: boolean
+  auto: boolean
+  inputGain: number
+} {
   useSyncExternalStore(subscribe, () => version)
-  return { mode: readSuppressorMode(), sensitivity: readSensitivity(), degraded }
+  return {
+    mode: readSuppressorMode(),
+    sensitivity: readSensitivity(),
+    degraded,
+    auto: readAutoSensitivity(),
+    inputGain: readInputGain()
+  }
 }
 
 function readInputDeviceId(): string {
@@ -185,8 +257,10 @@ function teardown(current: Graph): void {
     /* o worklet já pode ter sido encerrado */
   }
   current.source?.disconnect()
+  current.inputGain?.disconnect()
   current.gate?.disconnect()
   current.analyser?.disconnect()
+  current.postAnalyser?.disconnect()
   current.destination?.disconnect()
   for (const node of current.extras) node.disconnect()
   if (current.ownsOutput) current.output.getTracks().forEach((track) => track.stop())
@@ -202,8 +276,58 @@ function passthrough(mic: MediaStream, mode: SuppressorMode): Graph {
     destination: null,
     rnnoise: null,
     gate: null,
+    inputGain: null,
     analyser: null,
     data: null,
+    postAnalyser: null,
+    postData: null,
+    open: true,
+    extras: []
+  }
+}
+
+function makeAnalyser(audio: AudioContext): { analyser: AnalyserNode; data: Float32Array<ArrayBuffer> } {
+  const analyser = audio.createAnalyser()
+  analyser.fftSize = 1024
+  analyser.smoothingTimeConstant = 0.2
+  return { analyser, data: new Float32Array(analyser.fftSize) }
+}
+
+function rmsOf(analyser: AnalyserNode, data: Float32Array<ArrayBuffer>): number {
+  analyser.getFloatTimeDomainData(data)
+  let sum = 0
+  for (let index = 0; index < data.length; index += 1) sum += data[index] * data[index]
+  return Math.sqrt(sum / data.length)
+}
+
+function thresholdOf(sensitivity: number): number {
+  return 0.004 + (sensitivity / 100) * 0.06
+}
+
+/** Estúdio: sem supressão e sem gate. O ganho de entrada continua valendo e o medidor fica no mesmo contexto. */
+function studioGraph(audio: AudioContext, mic: MediaStream): Graph {
+  const source = audio.createMediaStreamSource(mic)
+  const inputGain = audio.createGain()
+  inputGain.gain.value = readInputGain()
+  const meter = makeAnalyser(audio)
+  const destination = audio.createMediaStreamDestination()
+  source.connect(inputGain)
+  inputGain.connect(meter.analyser)
+  meter.analyser.connect(destination)
+  return {
+    mode: 'off',
+    output: destination.stream,
+    ownsOutput: true,
+    degraded: false,
+    source,
+    destination,
+    rnnoise: null,
+    gate: null,
+    inputGain,
+    analyser: meter.analyser,
+    data: meter.data,
+    postAnalyser: meter.analyser,
+    postData: meter.data,
     open: true,
     extras: []
   }
@@ -218,11 +342,6 @@ function highpass(audio: AudioContext): BiquadFilterNode {
 }
 
 async function buildGraph(mic: MediaStream, mode: SuppressorMode): Promise<Graph> {
-  if (mode === 'off') {
-    const plain = passthrough(mic, mode)
-    plain.degraded = false
-    return plain
-  }
   let audio: AudioContext
   try {
     audio = context()
@@ -230,6 +349,7 @@ async function buildGraph(mic: MediaStream, mode: SuppressorMode): Promise<Graph
     console.warn('[voice] AudioContext indisponível', error)
     return passthrough(mic, mode)
   }
+  if (mode === 'off') return studioGraph(audio, mic)
   const source = audio.createMediaStreamSource(mic)
   try {
     source.channelCount = 1
@@ -266,15 +386,17 @@ async function buildGraph(mic: MediaStream, mode: SuppressorMode): Promise<Graph
     extras.push(filter)
   }
 
-  const analyser = audio.createAnalyser()
-  analyser.fftSize = 1024
-  analyser.smoothingTimeConstant = 0.2
-  const data = new Float32Array(analyser.fftSize)
+  const pre = makeAnalyser(audio)
+  const post = makeAnalyser(audio)
+  const inputGain = audio.createGain()
+  inputGain.gain.value = readInputGain()
   const gate = audio.createGain()
   gate.gain.value = 1
-  tail.connect(analyser)
-  tail.connect(gate)
-  gate.connect(destination)
+  tail.connect(inputGain)
+  inputGain.connect(pre.analyser)
+  inputGain.connect(gate)
+  gate.connect(post.analyser)
+  post.analyser.connect(destination)
   const output = destination.stream
   if (output.getAudioTracks().length === 0) {
     source.disconnect()
@@ -290,8 +412,11 @@ async function buildGraph(mic: MediaStream, mode: SuppressorMode): Promise<Graph
     destination,
     rnnoise,
     gate,
-    analyser,
-    data,
+    inputGain,
+    analyser: pre.analyser,
+    data: pre.data,
+    postAnalyser: post.analyser,
+    postData: post.data,
     open: true,
     extras
   }
@@ -389,29 +514,50 @@ export function releaseVoiceCapture(): void {
   raw?.getTracks().forEach((track) => track.stop())
   raw = null
   openedDevice = ''
+  probe = { preRms: 0, postRms: 0, transmitting: false }
   setDegraded(false)
   releasing = false
 }
 
+function followNoise(preRms: number): void {
+  if (!readAutoSensitivity() || readSuppressorMode() === 'off') return
+  const sensitivity = readSensitivity()
+  const threshold = thresholdOf(sensitivity)
+  if (preRms > threshold * 1.15) return
+  noiseFloor = noiseFloor * 0.92 + preRms * 0.08
+  const target = Math.min(0.064, Math.max(0.004, noiseFloor * 2.2))
+  const next = Math.round(((target - 0.004) / 0.06) * 100)
+  if (Math.abs(next - sensitivity) < 2 || performance.now() - lastAutoWrite < 400) return
+  lastAutoWrite = performance.now()
+  writeSensitivity(next)
+}
+
 export function pumpSuppressor(): void {
   const current = graph
-  if (!current?.gate || !current.analyser || !current.data) return
-  const mode = readSuppressorMode()
-  const sensitivity = readSensitivity()
-  if (mode === 'off' || sensitivity <= 0) {
-    current.open = true
-    current.gate.gain.value = 1
+  if (!current?.analyser || !current.data) {
+    probe = { preRms: 0, postRms: 0, transmitting: false }
     return
   }
-  current.analyser.getFloatTimeDomainData(current.data)
-  let sum = 0
-  for (let index = 0; index < current.data.length; index += 1) sum += current.data[index] * current.data[index]
-  const rms = Math.sqrt(sum / current.data.length)
-  const threshold = 0.004 + (sensitivity / 100) * 0.06
-  const next = current.open ? rms > threshold * 0.65 : rms > threshold
-  if (next === current.open) return
-  current.open = next
-  const now = current.gate.context.currentTime
-  current.gate.gain.cancelScheduledValues(now)
-  current.gate.gain.setTargetAtTime(next ? 1 : 0, now, next ? 0.01 : 0.08)
+  const preRms = rmsOf(current.analyser, current.data)
+  const postRms = current.postAnalyser && current.postData ? rmsOf(current.postAnalyser, current.postData) : preRms
+  const track = current.output.getAudioTracks()[0]
+  probe = { preRms, postRms, transmitting: track ? track.enabled : true }
+  const mode = readSuppressorMode()
+  if (current.gate && mode !== 'off') {
+    const sensitivity = readSensitivity()
+    if (sensitivity <= 0) {
+      current.open = true
+      current.gate.gain.value = 1
+    } else {
+      const threshold = thresholdOf(sensitivity)
+      const next = current.open ? preRms > threshold * 0.65 : preRms > threshold
+      if (next !== current.open) {
+        current.open = next
+        const now = current.gate.context.currentTime
+        current.gate.gain.cancelScheduledValues(now)
+        current.gate.gain.setTargetAtTime(next ? 1 : 0, now, next ? 0.01 : 0.08)
+      }
+    }
+  }
+  followNoise(preRms)
 }

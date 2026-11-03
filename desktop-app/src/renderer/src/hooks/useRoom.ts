@@ -29,6 +29,7 @@ import type {
   LobbyInput,
   LocalPublication,
   PeerView,
+  RoomCard,
   UserProfile,
   WebcamSettings
 } from '@renderer/types'
@@ -108,6 +109,9 @@ export function useRoom() {
   const [deafened, setDeafenedState] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [signalingUrl, setSignalingUrl] = useState('')
+  const [rooms, setRooms] = useState<RoomCard[]>([])
+  const [rosterReady, setRosterReady] = useState(false)
+  const lastInputRef = useRef<LobbyInput | null>(null)
   const micRef = useRef(false)
   const deafRef = useRef(false)
   const micBeforeDeafRef = useRef(false)
@@ -251,9 +255,14 @@ export function useRoom() {
       displayName,
       profile: publicProfileOf(saved),
       turn: normalizeTurn(input.turn),
+      unlisted: input.unlisted === true,
       events: {
         onStatus: setStatus,
-        onSnapshot: (snapshot) => setPeers(snapshot.peers),
+        onSnapshot: (snapshot) => {
+          setPeers(snapshot.peers)
+          setRosterReady(true)
+        },
+        onRooms: setRooms,
         onLocals: (publications) => {
           if (!publications.some((item) => item.meta.streamType === 'screen')) {
             releaseSystemAudioAnchor()
@@ -277,6 +286,9 @@ export function useRoom() {
     selfIdRef.current = peerId
     setSignalingUrl(input.signalingUrl.trim())
     setChatMessages([])
+    setRosterReady(false)
+    setRooms([])
+    lastInputRef.current = { ...input, displayName, roomId, profile: saved }
     sessionRef.current = session
     setProfile(saved)
     setSelf({ peerId, displayName, roomId })
@@ -288,6 +300,19 @@ export function useRoom() {
     setPhase('room')
     session.start()
   }, [resetVoice])
+
+  const switchRoom = useCallback(
+    (roomId: string) => {
+      const current = lastInputRef.current
+      if (!current || current.roomId === roomId) return
+      join({ ...current, roomId, unlisted: false })
+    },
+    [join]
+  )
+
+  const setVoiceState = useCallback((speaking: boolean, muted: boolean) => {
+    sessionRef.current?.setVoiceState(speaking, muted)
+  }, [])
 
   const leave = useCallback(() => {
     setVoiceEndedHandler(null)
@@ -404,6 +429,10 @@ export function useRoom() {
     micOn,
     deafened,
     signalingUrl,
+    rooms,
+    rosterReady,
+    switchRoom,
+    setVoiceState,
     toggleMic,
     toggleDeafen,
     applySuppressor,

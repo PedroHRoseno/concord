@@ -61,6 +61,17 @@ select {
   font-family: inherit;
 }
 
+button:not(:disabled),
+[role='button'],
+a,
+select,
+summary,
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'] {
+  cursor: pointer;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {

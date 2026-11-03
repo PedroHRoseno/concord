@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { isMobile } from '@renderer/lib/platform'
 import { readStreamStats, type StreamStats } from '@renderer/lib/stats'
+import { Avatar } from '@renderer/components/Avatar'
 import { StatsOverlay } from '@renderer/components/StatsOverlay'
 import {
   applySink,
@@ -38,6 +39,17 @@ export interface FloatCam {
   id: string
   name: string
   media: MediaStream
+  avatar?: string
+  accent?: string
+  peerId?: string
+}
+
+export interface StagePoster {
+  name: string
+  avatar?: string
+  accent?: string
+  peerId?: string
+  webcam: boolean
 }
 
 interface VideoStageProps {
@@ -53,6 +65,7 @@ interface VideoStageProps {
   canvas: boolean
   details: StreamDetails | null
   webcams: FloatCam[]
+  poster?: StagePoster
   onVolume: (value: number) => void
   onMuted: (value: boolean) => void
   onFocus: () => void
@@ -83,17 +96,37 @@ function factLines(details: StreamDetails | null): Array<{ label: string; value:
   ]
 }
 
+function FrameVeil({ webcam, name, avatar, accent, peerId }: { webcam: boolean; name: string; avatar?: string; accent?: string; peerId?: string }) {
+  if (webcam) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
+        <Avatar name={name} src={avatar} accent={accent} peerId={peerId} size="md" />
+      </div>
+    )
+  }
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/80 text-sm text-white/80 backdrop-blur-sm">
+      Sincronizando
+    </div>
+  )
+}
+
 function FloatingCam({ cam, origin }: { cam: FloatCam; origin: { x: number; y: number } }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [pos, setPos] = useState(origin)
+  const [frame, setFrame] = useState(false)
   const drag = useRef<{ x: number; y: number } | null>(null)
 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
+    setFrame(false)
+    const mark = () => setFrame(true)
+    video.addEventListener('playing', mark)
     video.srcObject = cam.media
     void video.play().catch(() => undefined)
     return () => {
+      video.removeEventListener('playing', mark)
       video.pause()
       video.srcObject = null
     }
@@ -126,7 +159,8 @@ function FloatingCam({ cam, origin }: { cam: FloatCam; origin: { x: number; y: n
         drag.current = null
       }}
     >
-      <video ref={videoRef} autoPlay playsInline muted className="pointer-events-none aspect-video w-full object-cover" />
+      <video ref={videoRef} autoPlay playsInline muted className={`pointer-events-none aspect-video w-full object-cover transition-opacity duration-300 ${frame ? 'opacity-100' : 'opacity-0'}`} />
+      {frame ? null : <FrameVeil webcam name={cam.name} avatar={cam.avatar} accent={cam.accent} peerId={cam.peerId} />}
       <span className="pointer-events-none absolute bottom-1 left-1 max-w-[9rem] truncate rounded bg-black/70 px-1.5 text-[10px] text-white">
         {cam.name}
       </span>
@@ -147,6 +181,7 @@ export function VideoStage({
   canvas,
   details,
   webcams,
+  poster,
   onVolume,
   onMuted,
   onFocus,
@@ -167,6 +202,7 @@ export function VideoStage({
   const [fullscreen, setFullscreen] = useState(false)
   const [pip, setPip] = useState(false)
   const [infoPinned, setInfoPinned] = useState(false)
+  const [frame, setFrame] = useState(false)
   const [floatsOn, setFloatsOn] = useState(readFloatingWebcams)
   const cssCleanup = useRef<(() => void) | null>(null)
   /** 'native' = Fullscreen API no container; 'css' = fallback que estica o tile e põe a janela em tela cheia via IPC. */
@@ -182,9 +218,13 @@ export function VideoStage({
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
+    setFrame(false)
+    const mark = () => setFrame(true)
+    video.addEventListener('playing', mark)
     video.srcObject = media
     void video.play().catch(() => undefined)
     return () => {
+      video.removeEventListener('playing', mark)
       video.pause()
       video.srcObject = null
     }
@@ -504,9 +544,18 @@ export function VideoStage({
         ref={videoRef}
         autoPlay
         playsInline
-        className="h-full w-full object-contain"
+        className={`h-full w-full object-contain transition-opacity duration-300 ${frame ? 'opacity-100' : 'opacity-0'}`}
         style={{ transform, transformOrigin: 'center center' }}
       />
+      {frame ? null : (
+        <FrameVeil
+          webcam={poster?.webcam === true}
+          name={poster?.name ?? ''}
+          avatar={poster?.avatar}
+          accent={poster?.accent}
+          peerId={poster?.peerId}
+        />
+      )}
       {showFloats
         ? webcams.map((cam, index) => <FloatingCam key={cam.id} cam={cam} origin={{ x: 12, y: 12 + index * 108 }} />)
         : null}

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import logo from '@renderer/assets/logo.png'
+import { Avatar } from '@renderer/components/Avatar'
 import { DownloadApkButton } from '@renderer/components/ApkRelease'
 import { ProfileFields } from '@renderer/components/ProfileFields'
+import { useRoomDirectory } from '@renderer/lib/room-directory'
 import { readProfile, writeProfile } from '@renderer/lib/profile'
 import type { LobbyInput, UserProfile } from '@renderer/types'
 
@@ -16,12 +18,6 @@ const STORAGE_AUTO = 'screenshare.autoJoin'
 const MANUAL_DISCONNECT = 'concord.manualDisconnect'
 const DEFAULT_ROOM = 'sala-principal'
 const DEFAULT_SIGNALING_URL = 'wss://concord-production-c4a3.up.railway.app'
-const ROOM_SHORTCUTS = [
-  { label: 'Geral', id: 'geral' },
-  { label: 'Jogos', id: 'jogos' },
-  { label: 'Sala 2', id: 'sala-2' }
-]
-
 function readStorage(key: string, fallback: string): string {
   try {
     return localStorage.getItem(key) ?? fallback
@@ -53,6 +49,16 @@ function initialSignalingUrl(): string {
   return DEFAULT_SIGNALING_URL
 }
 
+function shouldAutoJoin(): boolean {
+  try {
+    if (sessionStorage.getItem(MANUAL_DISCONNECT) === '1') return false
+  } catch {
+    return false
+  }
+  const saved = savedSession()
+  return Boolean(saved) && readStorage(STORAGE_AUTO, '1') !== '0'
+}
+
 function savedSession(): { displayName: string; roomId: string } | null {
   const displayName = readStorage(STORAGE_NAME, '').trim()
   const roomId = readStorage(STORAGE_ROOM, '').trim()
@@ -75,6 +81,10 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
   const [turnUsername, setTurnUsername] = useState(() => readStorage(STORAGE_TURN_USER, ''))
   const [turnCredential, setTurnCredential] = useState(() => readStorage(STORAGE_TURN_CRED, ''))
   const [autoJoin, setAutoJoin] = useState(() => readStorage(STORAGE_AUTO, '1') !== '0')
+  const [unlisted, setUnlisted] = useState(false)
+  const [customOpen, setCustomOpen] = useState(false)
+  const [splash, setSplash] = useState(shouldAutoJoin)
+  const rooms = useRoomDirectory(signalingUrl, !splash)
 
   useEffect(() => {
     if (readStorage(STORAGE_NAME, '').trim()) return
@@ -98,6 +108,10 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
   useEffect(() => {
     onDismissError()
   }, [displayName, roomId, signalingUrl, onDismissError])
+
+  useEffect(() => {
+    if (error) setSplash(false)
+  }, [error])
 
   useEffect(() => {
     try {
@@ -127,8 +141,20 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
       profile: { ...profile, displayName },
       roomId,
       signalingUrl,
-      turn: { urls: turnUrls, username: turnUsername, credential: turnCredential }
+      turn: { urls: turnUrls, username: turnUsername, credential: turnCredential },
+      unlisted
     }
+  }
+
+  function enter(nextRoomId: string, hidden = false): void {
+    const input = { ...currentInput(), roomId: nextRoomId, unlisted: hidden }
+    try {
+      sessionStorage.removeItem(MANUAL_DISCONNECT)
+    } catch {
+      /* segue o envio */
+    }
+    persist(input)
+    onJoin(input)
   }
 
   function persist(input: LobbyInput): void {
@@ -140,6 +166,14 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
     writeStorage(STORAGE_TURN_USER, input.turn.username)
     writeStorage(STORAGE_TURN_CRED, input.turn.credential)
     writeStorage(STORAGE_AUTO, autoJoin ? '1' : '0')
+  }
+
+  if (splash && !error) {
+    return (
+      <main className="flex h-full items-center justify-center bg-app">
+        <img src={logo} alt="" className="h-16 w-16 animate-pulse" />
+      </main>
+    )
   }
 
   return (
@@ -160,8 +194,7 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
       >
         <img src={logo} alt="" className="h-16 w-16" />
         <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-blurple">Concord</p>
-        <h1 className="mt-2 text-2xl font-semibold text-ink">Entrar na sala</h1>
-        <p className="mt-2 text-sm text-muted">Tela, webcam, voz, áudio do aplicativo e chat de texto.</p>
+        <h1 className="mt-2 text-2xl font-semibold text-ink">Salas online</h1>
         <div className="mt-3">
           <DownloadApkButton />
         </div>
@@ -186,31 +219,76 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
           <ProfileFields profile={{ ...profile, displayName }} onChange={setProfile} />
         </div>
 
-        <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="room-id">
-          ID da sala
-        </label>
-        <input
-          id="room-id"
-          value={roomId}
-          onChange={(event) => setRoomId(event.target.value)}
-          maxLength={64}
-          spellCheck={false}
-          autoComplete="off"
-          placeholder="sala-principal"
-          className="mt-2 h-11 w-full rounded-lg bg-app px-3 text-sm text-ink ring-1 ring-line"
-        />
-        <div className="mt-2 flex flex-wrap gap-2">
-          {ROOM_SHORTCUTS.map((shortcut) => (
-            <button
-              key={shortcut.id}
-              type="button"
-              onClick={() => setRoomId(shortcut.id)}
-              className={`h-8 rounded-full px-3 text-xs font-semibold ${roomId === shortcut.id ? 'bg-blurple text-white' : 'bg-app text-muted ring-1 ring-line hover:text-ink'}`}
-            >
-              {shortcut.label}
-            </button>
-          ))}
+        <div className="mt-4 space-y-2">
+          {(rooms.length > 0 ? rooms : [
+            { roomId: 'geral', label: 'Sala geral', members: [], activity: { screens: [], cameras: 0 } },
+            { roomId: 'jogatina', label: 'Jogatina', members: [], activity: { screens: [], cameras: 0 } },
+            { roomId: 'afk', label: 'AFK', members: [], activity: { screens: [], cameras: 0 } }
+          ]).map((room) => {
+            const live = room.activity.screens[0]?.sourceName
+            return (
+              <button
+                key={room.roomId}
+                type="button"
+                onClick={() => enter(room.roomId, false)}
+                className="flex w-full items-center gap-3 rounded-xl bg-app px-3 py-2.5 text-left ring-1 ring-white/10 transition-all hover:bg-white/[0.06] active:scale-[0.99]"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-ink">{room.label}</span>
+                    <span className="text-xs text-muted">{room.members.length}</span>
+                  </span>
+                  <span className="mt-1 flex items-center">
+                    {room.members.slice(0, 5).map((member, index) => (
+                      <span key={member.peerId} className={index === 0 ? '' : '-ml-2'} title={member.name}>
+                        <Avatar name={member.name} src={member.avatar} accent={member.accentColor} speaking={member.isSpeaking} size="xs" />
+                      </span>
+                    ))}
+                    {room.members.length === 0 ? <span className="text-xs text-muted">Ninguém por aqui</span> : null}
+                  </span>
+                  {live || room.activity.cameras > 0 ? (
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      {live ? <span className="rounded bg-live/15 px-1.5 py-0.5 text-[10px] font-bold text-live">AO VIVO · {live}</span> : null}
+                      {room.activity.cameras > 0 ? (
+                        <span className="rounded bg-blurple/20 px-1.5 py-0.5 text-[10px] font-bold text-blurple">
+                          {room.activity.cameras} {room.activity.cameras === 1 ? 'câmera' : 'câmeras'}
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            )
+          })}
         </div>
+        <button
+          type="button"
+          onClick={() => setCustomOpen((open) => !open)}
+          className="mt-3 text-sm font-semibold text-blurple hover:underline"
+        >
+          + Criar / Entrar em outra sala
+        </button>
+        {customOpen ? (
+          <div className="mt-3">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="room-id">
+              ID da sala
+            </label>
+            <input
+              id="room-id"
+              value={roomId}
+              onChange={(event) => setRoomId(event.target.value)}
+              maxLength={64}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="sala-principal"
+              className="mt-2 h-11 w-full rounded-lg bg-app px-3 text-sm text-ink ring-1 ring-line"
+            />
+            <label className="mt-3 flex items-center gap-2 text-sm text-ink">
+              <input type="checkbox" checked={unlisted} onChange={(event) => setUnlisted(event.target.checked)} className="h-4 w-4 accent-blurple" />
+              Sala oculta (não listar no lobby)
+            </label>
+          </div>
+        ) : null}
 
         <label className="mt-4 flex items-center gap-2 text-sm text-ink">
           <input
@@ -284,12 +362,14 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
           </p>
         ) : null}
 
-        <button
-          type="submit"
-          className="mt-6 h-11 w-full rounded-lg bg-blurple text-sm font-semibold text-white hover:bg-[#4752c4]"
-        >
-          Entrar
-        </button>
+        {customOpen ? (
+          <button
+            type="submit"
+            className="mt-6 h-11 w-full rounded-lg bg-blurple text-sm font-semibold text-white hover:bg-[#4752c4]"
+          >
+            Entrar
+          </button>
+        ) : null}
       </form>
     </main>
   )

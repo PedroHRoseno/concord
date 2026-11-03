@@ -24,6 +24,7 @@ interface ChatPanelProps {
   signalingUrl: string
   connected: boolean
   onSend: (text: string, image?: string) => void
+  booting?: boolean
 }
 
 const GROUP_MS = 5 * 60 * 1000
@@ -192,7 +193,7 @@ function MessageBody({ text, signalingUrl, onZoom }: { text: string; signalingUr
   )
 }
 
-export function ChatPanel({ messages, selfId, selfName, selfProfile, peers, signalingUrl, connected, onSend }: ChatPanelProps) {
+export function ChatPanel({ messages, selfId, selfName, selfProfile, peers, signalingUrl, connected, onSend, booting = false }: ChatPanelProps) {
   const [text, setText] = useState('')
   const [pending, setPending] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
@@ -246,6 +247,17 @@ export function ChatPanel({ messages, selfId, selfName, selfProfile, peers, sign
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-1 py-2">
+        {booting ? (
+          <div className="space-y-3 px-3 py-2">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={index} className="flex animate-pulse gap-2">
+                <span className="h-10 w-10 rounded-full bg-white/10" />
+                <span className="mt-2 h-3 flex-1 rounded bg-white/10" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="transition-opacity duration-300">
         {messages.length === 0 ? <p className="px-3 py-4 text-xs text-muted">Nenhuma mensagem ainda.</p> : null}
         {messages.map((message, index) => {
           const grouped = continuation(messages, index)
@@ -279,6 +291,8 @@ export function ChatPanel({ messages, selfId, selfName, selfProfile, peers, sign
             </div>
           )
         })}
+          </div>
+        )}
       </div>
       {problem ? <p className="px-3 pb-1 text-xs text-danger">{problem}</p> : null}
       <form onSubmit={submit} className="mx-2 mb-2 rounded-xl bg-zinc-800/90 p-2 ring-1 ring-white/10">

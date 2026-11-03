@@ -299,7 +299,14 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     if (entry.meta.streamType !== 'screen') return []
     return entries
       .filter((item) => item.meta.streamType === 'webcam' && item.id !== entry.id && item.media)
-      .map((item) => ({ id: item.id, name: item.name, media: item.media as MediaStream }))
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        media: item.media as MediaStream,
+        avatar: item.avatarDataUrl,
+        accent: item.accentColor,
+        peerId: item.peerId
+      }))
   }
 
   function card(entry: StageEntry, fill: boolean, focused: boolean, canvas: boolean) {

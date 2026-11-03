@@ -56,8 +56,27 @@ export interface SignalPayload {
   candidate?: RTCIceCandidateInit
 }
 
+export interface RoomMemberCard {
+  peerId: string
+  name: string
+  avatar: string
+  accentColor: string
+  statusText: string
+  isSpeaking: boolean
+  isMuted: boolean
+}
+
+export interface RoomCard {
+  roomId: string
+  label: string
+  members: RoomMemberCard[]
+  activity: { screens: Array<{ sourceName: string }>; cameras: number }
+}
+
 export type ClientMessage =
-  | { type: 'join'; roomId: string; peerId: string; displayName: string; profile?: PublicProfile; features?: Feature[] }
+  | { type: 'join'; roomId: string; peerId: string; displayName: string; profile?: PublicProfile; features?: Feature[]; unlisted?: boolean }
+  | { type: 'watch-rooms' }
+  | { type: 'voice-state'; speaking: boolean; muted: boolean }
   | { type: 'chat'; text?: string; image?: string }
   | { type: 'update-profile'; displayName: string; profile: PublicProfile }
   | { type: 'leave' }
@@ -81,6 +100,8 @@ export type ServerMessage =
   | { type: 'chat'; message: ChatMessage }
   | { type: 'chat-history'; messages: ChatMessage[] }
   | { type: 'pong' }
+  | { type: 'rooms'; rooms: RoomCard[] }
+  | { type: 'rooms-updated'; rooms: RoomCard[] }
   | { type: 'error'; message: string }
 
 export interface TurnCredentials {
@@ -138,6 +159,7 @@ export interface LobbyInput {
   signalingUrl: string
   turn: TurnCredentials
   profile: UserProfile
+  unlisted?: boolean
 }
 
 export interface WebcamSettings {

@@ -24,6 +24,7 @@ import {
   type StreamType,
   type TurnCredentials,
   type PublicProfile,
+  type RoomCard,
   type WatcherInfo
 } from '@renderer/types'
 
@@ -38,6 +39,7 @@ export interface MeshEvents {
   onError: (message: string) => void
   onChat: (message: ChatMessage) => void
   onChatHistory: (messages: ChatMessage[]) => void
+  onRooms: (rooms: RoomCard[]) => void
 }
 
 interface SessionOptions {
@@ -47,6 +49,7 @@ interface SessionOptions {
   displayName: string
   profile: PublicProfile
   turn: TurnCredentials | null
+  unlisted?: boolean
   events: MeshEvents
 }
 
@@ -123,6 +126,8 @@ export class MeshSession {
   private silent: { context: AudioContext; track: MediaStreamTrack } | null = null
   private disposed = false
   private captureActive = false
+  private readonly unlisted: boolean
+  private voiceState: { speaking: boolean; muted: boolean } | null = null
 
   constructor(options: SessionOptions) {
     this.events = options.events
@@ -131,6 +136,7 @@ export class MeshSession {
     this.displayName = options.displayName
     this.profile = options.profile
     this.turn = options.turn
+    this.unlisted = options.unlisted === true
     this.url = options.url
     this.iceServers = buildIceServers(options.turn)
     this.socket = new SignalingClient(options.url)
@@ -145,8 +151,11 @@ export class MeshSession {
         peerId: this.peerId,
         displayName: this.displayName,
         profile: this.profile,
-        features: ['voice', 'chat']
+        features: ['voice', 'chat'],
+        unlisted: this.unlisted
       })
+      this.socket.send({ type: 'watch-rooms' })
+      if (this.voiceState) this.socket.send({ type: 'voice-state', ...this.voiceState })
     }
     this.socket.onClose = () => {
       if (this.disposed) return
@@ -166,6 +175,12 @@ export class MeshSession {
     if (this.disposed) return
     if (remote.length > 0) this.iceServers = buildIceServers(this.turn, remote)
     this.socket.start()
+  }
+
+  setVoiceState(speaking: boolean, muted: boolean): void {
+    if (this.voiceState?.speaking === speaking && this.voiceState.muted === muted) return
+    this.voiceState = { speaking, muted }
+    this.socket.send({ type: 'voice-state', speaking, muted })
   }
 
   sendChat(text: string, image?: string): void {
@@ -409,6 +424,10 @@ export class MeshSession {
         this.events.onChatHistory(message.messages)
         return
       case 'pong':
+        return
+      case 'rooms':
+      case 'rooms-updated':
+        this.events.onRooms(message.rooms)
         return
       default:
         return
