@@ -71,6 +71,7 @@ export function Room({ room }: { room: RoomController }) {
     for (const local of room.locals) {
       entries.push({
         id: local.streamId,
+        slotKey: local.streamId,
         peerId: room.self.peerId,
         name: room.profile.displayName || room.self.displayName,
         isSelf: true,
@@ -88,9 +89,11 @@ export function Room({ room }: { room: RoomController }) {
     }
     for (const peer of room.peers) {
       for (const stream of peer.streams) {
-        if (!stream.watching) continue
+        const preview = stream.meta.streamType === 'screen' && !stream.watching && !stream.hidden
+        if (!stream.watching && !preview) continue
         entries.push({
           id: stream.streamId,
+          slotKey: stream.slotKey || stream.streamId,
           peerId: peer.peerId,
           name: peer.displayName,
           isSelf: false,
@@ -99,13 +102,37 @@ export function Room({ room }: { room: RoomController }) {
           customStatus: peer.profile.customStatus,
           meta: stream.meta,
           media: stream.media,
-          watching: true,
+          watching: stream.watching,
           pc: stream.pc,
           direction: 'inbound',
           watchers: stream.watchers,
-          reconnecting: stream.reconnecting
+          reconnecting: stream.reconnecting,
+          previewOnly: preview,
+          poster: stream.preview
         })
       }
+    }
+    for (const ghost of room.ghosts) {
+      if (entries.some((entry) => entry.slotKey === ghost.slotKey)) continue
+      entries.push({
+        id: ghost.streamId,
+        slotKey: ghost.slotKey,
+        peerId: ghost.peerId,
+        name: ghost.name,
+        isSelf: false,
+        avatarDataUrl: ghost.avatarDataUrl,
+        accentColor: ghost.accentColor,
+        customStatus: ghost.customStatus,
+        meta: ghost.meta,
+        media: null,
+        watching: true,
+        pc: null,
+        direction: 'inbound',
+        watchers: [],
+        reconnecting: false,
+        ghost: true,
+        poster: ghost.poster
+      })
     }
   }
 
@@ -216,12 +243,12 @@ export function Room({ room }: { room: RoomController }) {
           </button>
         </div>
       ) : null}
-      <div className={`room-chrome flex shrink-0 items-center gap-2 border-b border-line px-3 ${mobile ? 'min-h-12 py-1' : 'h-9'}`}>
+      <div className={`room-chrome flex shrink-0 items-center gap-2 border-b border-line px-3 ${mobile ? 'min-h-12 py-1' : 'h-12'}`}>
         <div className="flex gap-0.5 rounded-lg bg-panel p-0.5 ring-1 ring-white/10">
           <button
             type="button"
             onClick={() => setLayout('grid')}
-            className={`inline-flex items-center gap-1 rounded-md px-2 text-xs ${mobile ? 'h-11' : 'h-7'} ${layout === 'grid' ? 'bg-blurple text-white' : 'text-muted'}`}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 text-sm font-medium ${mobile ? 'h-11' : 'h-9'} ${layout === 'grid' ? 'bg-blurple text-white' : 'text-muted'}`}
           >
             <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
             Grade
@@ -229,7 +256,7 @@ export function Room({ room }: { room: RoomController }) {
           <button
             type="button"
             onClick={() => setLayout('focus')}
-            className={`inline-flex items-center gap-1 rounded-md px-2 text-xs ${mobile ? 'h-11' : 'h-7'} ${layout === 'focus' ? 'bg-blurple text-white' : 'text-muted'}`}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 text-sm font-medium ${mobile ? 'h-11' : 'h-9'} ${layout === 'focus' ? 'bg-blurple text-white' : 'text-muted'}`}
           >
             <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
             Foco
@@ -246,7 +273,7 @@ export function Room({ room }: { room: RoomController }) {
                     disabled={entries.length === 0}
                     onClick={() => stageRef.current?.organize('grid')}
                     title="Auto-organizar"
-                    className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
                   >
                     <WandSparkles className="h-3.5 w-3.5" aria-hidden="true" />
                     Auto-organizar
@@ -256,7 +283,7 @@ export function Room({ room }: { room: RoomController }) {
                     disabled={entries.length === 0}
                     onClick={() => stageRef.current?.organize('grid')}
                     title="Lado a Lado"
-                    className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
                   >
                     <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
                     Lado a Lado
@@ -266,7 +293,7 @@ export function Room({ room }: { room: RoomController }) {
                     disabled={!hasScreen || !hasWebcam}
                     onClick={() => stageRef.current?.organize('corner')}
                     title="Destaque + Canto"
-                    className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
                   >
                     <PictureInPicture className="h-3.5 w-3.5" aria-hidden="true" />
                     Destaque + Canto
@@ -290,7 +317,7 @@ export function Room({ room }: { room: RoomController }) {
                       setCameraRail(id)
                       writeCameraRail(id)
                     }}
-                    className={`inline-flex h-7 w-7 items-center justify-center rounded-md ${cameraRail === id ? 'bg-blurple text-white' : 'text-muted hover:text-ink'}`}
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-md ${cameraRail === id ? 'bg-blurple text-white' : 'text-muted hover:text-ink'}`}
                   >
                     <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
@@ -304,7 +331,7 @@ export function Room({ room }: { room: RoomController }) {
           onClick={() => setSidebarOpen((open) => !open)}
           aria-pressed={sidebarOpen}
           title={sidebarOpen ? 'Recolher a lista da sala' : 'Mostrar a lista da sala'}
-          className={`relative inline-flex items-center gap-1.5 rounded-lg px-2 text-xs text-muted hover:bg-panel hover:text-ink ${mobile ? 'h-11' : 'h-8'}`}
+          className={`relative inline-flex items-center gap-1.5 rounded-lg px-3 text-sm text-muted hover:bg-panel hover:text-ink ${mobile ? 'h-11' : 'h-9'}`}
         >
           {sidebarOpen ? <PanelRightClose className="h-4 w-4" aria-hidden="true" /> : <PanelRight className="h-4 w-4" aria-hidden="true" />}
           <span>{peopleCount}</span>
@@ -328,7 +355,29 @@ export function Room({ room }: { room: RoomController }) {
                 onMix={updateMix}
                 onWatch={room.watch}
                 onUnwatch={room.unwatch}
+                onHide={room.hideScreen}
+                onFrame={room.noteFrame}
                 onLayoutChange={setLayout}
+                roomLabel={room.rooms.find((item) => item.roomId === room.self?.roomId)?.label ?? room.self?.roomId ?? 'sala'}
+                people={[
+                  ...(room.self
+                    ? [{
+                        peerId: room.self.peerId,
+                        name: room.profile.displayName || room.self.displayName,
+                        avatar: room.profile.avatarDataUrl,
+                        accent: room.profile.accentColor
+                      }]
+                    : []),
+                  ...room.peers.map((peer) => ({
+                    peerId: peer.peerId,
+                    name: peer.displayName,
+                    avatar: peer.profile.avatarDataUrl,
+                    accent: peer.profile.accentColor
+                  }))
+                ]}
+                onShare={() => setPicker('start')}
+                onCamera={() => setWebcamOpen(true)}
+                canShare={canShareScreen()}
               />
             </div>
           </div>
@@ -352,6 +401,8 @@ export function Room({ room }: { room: RoomController }) {
             onFlipCamera={flipCamera}
             onSettings={() => openSettings(settingsSection)}
             onLeave={room.leave}
+            status={room.status}
+            latency={room.latency}
           />
           </div>
         </main>

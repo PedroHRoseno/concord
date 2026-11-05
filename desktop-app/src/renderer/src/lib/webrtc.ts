@@ -25,11 +25,13 @@ import {
   type TurnCredentials,
   type PublicProfile,
   type RoomCard,
+  type ScreenGhost,
   type WatcherInfo
 } from '@renderer/types'
 
 export interface MeshSnapshot {
   peers: PeerView[]
+  ghosts: ScreenGhost[]
 }
 
 export interface MeshEvents {
@@ -40,6 +42,7 @@ export interface MeshEvents {
   onChat: (message: ChatMessage) => void
   onChatHistory: (messages: ChatMessage[]) => void
   onRooms: (rooms: RoomCard[]) => void
+  onLatency: (ms: number | null) => void
 }
 
 interface SessionOptions {
@@ -117,7 +120,17 @@ export class MeshSession {
   private earlyIce = new Map<string, RTCIceCandidateInit[]>()
   private watching = new Set<string>()
   private hiddenWebcams = new Set<string>()
+  private hiddenScreens = new Set<string>()
   private watchMemory = new Map<string, number>()
+  private ghosts = new Map<string, ScreenGhost>()
+  private ghostTimer: number | null = null
+  private frames = new Map<string, string>()
+  private previews = new Map<string, string>()
+  private slotByStream = new Map<string, string>()
+  private previewTimer: number | null = null
+  private previewVideo: HTMLVideoElement | null = null
+  private lastPreviewImage = ''
+  private lastPreviewStreamId = ''
   private hostJobs = new Map<string, Promise<void>>()
   private locals = new Map<string, LocalPub>()
   private localWatchers = new Map<string, WatcherInfo[]>()
@@ -142,6 +155,9 @@ export class MeshSession {
     this.socket = new SignalingClient(options.url)
     this.socket.onStatus = (status) => {
       if (!this.disposed) this.events.onStatus(status)
+    }
+    this.socket.onLatency = (ms) => {
+      if (!this.disposed) this.events.onLatency(ms)
     }
     this.socket.onOpen = () => {
       if (this.disposed) return
@@ -257,6 +273,7 @@ export class MeshSession {
       if (link?.role === 'host' && link.streamId === streamId) this.closeLink(key)
     }
     current.stream.getTracks().forEach((track) => track.stop())
+    if (streamType === 'screen') this.stopPreviewLoop()
     if (streamType !== 'voice') playStreamStopSound()
     if (this.mediaLocals() === 0) this.releaseSilent()
     this.socket.send({ type: 'stream-meta', streamId, meta: null })
@@ -276,6 +293,7 @@ export class MeshSession {
     const owner = this.ownerOf(streamId)
     if (!owner?.streams.has(streamId)) return
     this.hiddenWebcams.delete(streamId)
+    this.hiddenScreens.delete(streamId)
     this.watchMemory.delete(streamId)
     this.watching.add(streamId)
     this.socket.send({ type: 'watch', streamId })
@@ -284,6 +302,7 @@ export class MeshSession {
 
   unwatch(streamId: string): void {
     if (streamId.endsWith(':webcam')) this.hiddenWebcams.add(streamId)
+    this.dropGhost(streamId)
     this.watching.delete(streamId)
     this.watchMemory.delete(streamId)
     this.rewatchTried.delete(streamId)
@@ -295,8 +314,30 @@ export class MeshSession {
     this.emit()
   }
 
+  hideScreen(streamId: string): void {
+    this.hiddenScreens.add(streamId)
+    this.dropGhost(streamId)
+    if (this.watching.has(streamId)) this.unwatch(streamId)
+    else this.emit()
+  }
+
+  noteFrame(streamId: string, image: string): void {
+    if (!image.startsWith('data:image/webp;base64,') || image.length > 48_000) return
+    this.frames.set(streamId, image)
+    for (const ghost of this.ghosts.values()) {
+      if (ghost.streamId === streamId && ghost.poster !== image) {
+        ghost.poster = image
+        this.emit()
+        return
+      }
+    }
+  }
+
   dispose(): void {
     for (const streamType of ['screen', 'webcam', 'voice'] as const) this.stopStream(streamType)
+    this.stopPreviewLoop()
+    if (this.ghostTimer !== null) window.clearInterval(this.ghostTimer)
+    this.ghostTimer = null
     this.closeAllLinks()
     this.releaseSilent()
     this.socket.send({ type: 'leave' })
@@ -315,6 +356,7 @@ export class MeshSession {
       this.setCaptureActive(true)
       playStreamStartSound()
     }
+    if (streamType === 'screen') this.ensurePreviewLoop(stream, streamId)
     this.emitLocals()
     this.emit()
   }
@@ -350,6 +392,7 @@ export class MeshSession {
       }
     }
     old.getTracks().forEach((track) => track.stop())
+    if (previous.streamType === 'screen') this.ensurePreviewLoop(stream, previous.streamId)
     const meta = toStreamMeta(settings, previous.streamId, previous.streamType)
     this.socket.send({ type: 'stream-meta', streamId: previous.streamId, meta })
     this.emitLocals()
@@ -374,18 +417,22 @@ export class MeshSession {
         this.subscribeVisibleWebcams()
         this.emit()
         return
-      case 'peer-joined':
-        if (!this.peers.has(message.peer.peerId)) {
+      case 'peer-joined': {
+        const returning = this.ghostMatches(message.peer.peerId, message.peer.displayName)
+        if (!this.peers.has(message.peer.peerId) && !returning) {
           playUserJoinSound()
           if (message.peer.streams.some((meta) => meta.streamType !== 'voice')) playStreamStartSound()
         }
-        this.peers.set(message.peer.peerId, this.toRemote(message.peer))
+        const peer = this.toRemote(message.peer)
+        this.peers.set(message.peer.peerId, peer)
         for (const meta of message.peer.streams) {
-          this.maybeRewatch(meta.streamId)
+          if (!this.claimGhost(peer, meta)) this.maybeRewatch(meta.streamId)
           this.considerWebcam(meta)
         }
+        this.pushPreviewTo(message.peer.peerId)
         this.emit()
         return
+      }
       case 'peer-left':
         this.handlePeerLeft(message.peerId)
         return
@@ -424,6 +471,13 @@ export class MeshSession {
         this.events.onChatHistory(message.messages)
         return
       case 'pong':
+        return
+      case 'stream-preview':
+        this.previews.set(message.streamId, message.image)
+        for (const ghost of this.ghosts.values()) {
+          if (ghost.peerId === message.peerId || ghost.streamId === message.streamId) ghost.poster = ghost.poster || message.image
+        }
+        this.emit()
         return
       case 'rooms':
       case 'rooms-updated':
@@ -480,15 +534,20 @@ export class MeshSession {
 
   private handlePeerLeft(peerId: string): void {
     const peer = this.peers.get(peerId)
+    let quiet = false
     if (peer) {
-      playUserLeaveSound()
-      for (const streamId of peer.streams.keys()) {
-        if (this.watching.has(streamId)) this.watchMemory.set(streamId, Date.now() + 8000)
+      for (const [streamId, meta] of peer.streams) {
+        if (meta.streamType === 'screen' && this.watching.has(streamId)) {
+          this.holdGhost(peer, meta)
+          quiet = true
+        }
+        if (this.watching.has(streamId)) this.watchMemory.set(streamId, Date.now() + 10_000)
         this.watching.delete(streamId)
         this.rewatchTried.delete(streamId)
         this.pendingRewatch.delete(streamId)
         this.remoteStreams.delete(streamId)
       }
+      if (!quiet) playUserLeaveSound()
     }
     this.peers.delete(peerId)
     for (const key of [...this.links.keys()]) {
@@ -502,11 +561,14 @@ export class MeshSession {
     const peer = this.peers.get(peerId)
     if (!peer) return
     if (!meta) {
-      const had = peer.streams.has(streamId)
-      if (had && !streamId.endsWith(':voice')) playStreamStopSound()
+      const previous = peer.streams.get(streamId)
+      const grace = previous?.streamType === 'screen' && this.watching.has(streamId)
+      if (grace && previous) this.holdGhost(peer, previous)
+      else if (previous && !streamId.endsWith(':voice')) playStreamStopSound()
       peer.streams.delete(streamId)
       peer.watchers.delete(streamId)
-      this.watchMemory.delete(streamId)
+      if (grace) this.watchMemory.set(streamId, Date.now() + 10_000)
+      else this.watchMemory.delete(streamId)
       this.watching.delete(streamId)
       this.rewatchTried.delete(streamId)
       this.pendingRewatch.delete(streamId)
@@ -515,9 +577,10 @@ export class MeshSession {
     } else {
       const had = peer.streams.has(streamId)
       peer.streams.set(streamId, meta)
-      if (!had && meta.streamType !== 'voice') playStreamStartSound()
+      const claimed = this.claimGhost(peer, meta)
+      if (!had && meta.streamType !== 'voice' && !claimed) playStreamStartSound()
       this.considerWebcam(meta)
-      this.maybeRewatch(streamId)
+      if (!claimed) this.maybeRewatch(streamId)
     }
     this.emit()
   }
@@ -1125,9 +1188,161 @@ export class MeshSession {
         watching: this.watching.has(meta.streamId),
         pc: this.links.get(linkKey(meta.streamId, this.peerId))?.pc ?? null,
         watchers: (peer.watchers.get(meta.streamId) ?? []).map((watcher) => this.presentWatcher(watcher)),
-        reconnecting: this.streamRecovering(meta.streamId)
+        reconnecting: this.streamRecovering(meta.streamId),
+        preview: this.previews.get(meta.streamId) ?? this.frames.get(meta.streamId) ?? '',
+        hidden: meta.streamType === 'screen' && this.hiddenScreens.has(meta.streamId),
+        slotKey: this.assignSlot(peer, meta.streamId)
       }))
     }))
-    this.events.onSnapshot({ peers })
+    this.events.onSnapshot({ peers, ghosts: [...this.ghosts.values()] })
+  }
+
+  private normName(name: string): string {
+    return name.trim().toLocaleLowerCase()
+  }
+
+  private slotFor(peerId: string, name: string): string {
+    const key = this.normName(name)
+    const same = [...this.peers.values()].filter((peer) => this.normName(peer.displayName) === key)
+    return same.length <= 1 ? `screen:${key}` : `screen:${peerId}`
+  }
+
+  private assignSlot(peer: RemotePeer, streamId: string): string {
+    const known = this.slotByStream.get(streamId)
+    if (known) return known
+    const slot = streamId.endsWith(':screen') ? this.slotFor(peer.peerId, peer.displayName) : streamId
+    this.slotByStream.set(streamId, slot)
+    return slot
+  }
+
+  private ghostMatches(peerId: string, name: string): ScreenGhost | undefined {
+    const now = Date.now()
+    const alive = [...this.ghosts.values()].filter((ghost) => ghost.expiresAt > now)
+    const byId = alive.find((ghost) => ghost.peerId === peerId)
+    if (byId) return byId
+    const byName = alive.filter((ghost) => this.normName(ghost.name) === this.normName(name))
+    if (byName.length !== 1) return undefined
+    const others = [...this.peers.values()].filter(
+      (peer) => peer.peerId !== peerId && this.normName(peer.displayName) === this.normName(name)
+    )
+    return others.length === 0 ? byName[0] : undefined
+  }
+
+  private holdGhost(peer: RemotePeer, meta: StreamMeta): void {
+    const slotKey = this.assignSlot(peer, meta.streamId)
+    const poster = this.frames.get(meta.streamId) || this.previews.get(meta.streamId) || ''
+    this.ghosts.set(slotKey, {
+      slotKey,
+      peerId: peer.peerId,
+      name: peer.displayName,
+      avatarDataUrl: peer.profile.avatarDataUrl,
+      accentColor: peer.profile.accentColor,
+      customStatus: peer.profile.customStatus,
+      sourceName: meta.sourceName,
+      streamId: meta.streamId,
+      poster,
+      expiresAt: Date.now() + 10_000,
+      meta
+    })
+    this.armGhosts()
+  }
+
+  private dropGhost(streamId: string): void {
+    const slot = this.slotByStream.get(streamId)
+    if (slot) this.ghosts.delete(slot)
+    for (const [key, ghost] of this.ghosts) {
+      if (ghost.streamId === streamId) this.ghosts.delete(key)
+    }
+  }
+
+  private claimGhost(peer: RemotePeer, meta: StreamMeta): boolean {
+    if (meta.streamType !== 'screen') return false
+    const ghost = this.ghostMatches(peer.peerId, peer.displayName)
+    if (!ghost) return false
+    this.ghosts.delete(ghost.slotKey)
+    this.slotByStream.set(meta.streamId, ghost.slotKey)
+    if (ghost.poster) this.frames.set(meta.streamId, ghost.poster)
+    this.watch(meta.streamId)
+    return true
+  }
+
+  private armGhosts(): void {
+    if (this.ghostTimer !== null) return
+    this.ghostTimer = window.setInterval(() => {
+      const now = Date.now()
+      let changed = false
+      for (const [key, ghost] of this.ghosts) {
+        if (ghost.expiresAt <= now) {
+          this.ghosts.delete(key)
+          changed = true
+        }
+      }
+      if (this.ghosts.size === 0 && this.ghostTimer !== null) {
+        window.clearInterval(this.ghostTimer)
+        this.ghostTimer = null
+      }
+      if (changed) this.emit()
+    }, 400)
+  }
+
+  private ensurePreviewLoop(stream: MediaStream, streamId: string): void {
+    if (!this.previewVideo) {
+      const video = document.createElement('video')
+      video.muted = true
+      video.playsInline = true
+      this.previewVideo = video
+    }
+    if (this.previewVideo.srcObject !== stream) {
+      this.previewVideo.srcObject = stream
+      void this.previewVideo.play().catch(() => undefined)
+    }
+    if (this.previewTimer !== null) return
+    const tick = (): void => {
+      void this.capturePreview(streamId)
+    }
+    window.setTimeout(tick, 500)
+    this.previewTimer = window.setInterval(tick, 2000)
+  }
+
+  private stopPreviewLoop(): void {
+    if (this.previewTimer !== null) window.clearInterval(this.previewTimer)
+    this.previewTimer = null
+    this.lastPreviewImage = ''
+    this.lastPreviewStreamId = ''
+    if (this.previewVideo) this.previewVideo.srcObject = null
+  }
+
+  private async capturePreview(streamId: string): Promise<void> {
+    const video = this.previewVideo
+    const pub = this.locals.get(streamId)
+    if (!video || !pub || pub.streamType !== 'screen' || video.readyState < 2 || video.videoWidth < 2) return
+    const width = 480
+    const height = Math.max(1, Math.round((video.videoHeight / video.videoWidth) * width))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) return
+    context.drawImage(video, 0, 0, width, height)
+    let quality = 0.55
+    let image = canvas.toDataURL('image/webp', quality)
+    while (image.length > 48_000 && quality > 0.2) {
+      quality = Math.round((quality - 0.1) * 10) / 10
+      image = canvas.toDataURL('image/webp', quality)
+    }
+    if (!image.startsWith('data:image/webp;base64,') || image.length > 48_000) return
+    this.lastPreviewImage = image
+    this.lastPreviewStreamId = streamId
+    this.socket.send({ type: 'stream-preview', streamId, image })
+  }
+
+  private pushPreviewTo(peerId: string): void {
+    if (!this.lastPreviewImage || !this.lastPreviewStreamId) return
+    this.socket.send({
+      type: 'stream-preview',
+      streamId: this.lastPreviewStreamId,
+      image: this.lastPreviewImage,
+      to: peerId
+    })
   }
 }

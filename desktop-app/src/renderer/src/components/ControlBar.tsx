@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeftRight, AudioWaveform, HeadphoneOff, Headphones, LogOut, Mic, MicOff, RefreshCw, ScreenShare, Settings, Square, Video } from 'lucide-react'
+import { ArrowLeftRight, AudioWaveform, HeadphoneOff, Headphones, LogOut, Mic, MicOff, RefreshCw, ScreenShare, Settings, Signal, Square, Video } from 'lucide-react'
 import { canShareScreen, useMobileLayout } from '@renderer/lib/platform'
 import { toggledSuppressorMode, useVoiceProcessing, type SuppressorMode } from '@renderer/lib/suppressor'
+import type { ConnectionStatus } from '@renderer/types'
 
 interface ControlBarProps {
   sharing: boolean
@@ -19,9 +20,11 @@ interface ControlBarProps {
   onWebcam: () => void
   onSettings: () => void
   onLeave: () => void
+  status: ConnectionStatus
+  latency: number | null
 }
 
-export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggleMic, onToggleDeafen, onToggleSuppressor, onFlipCamera, onShare, onSwap, onStop, onWebcam, onSettings, onLeave }: ControlBarProps) {
+export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggleMic, onToggleDeafen, onToggleSuppressor, onFlipCamera, onShare, onSwap, onStop, onWebcam, onSettings, onLeave, status, latency }: ControlBarProps) {
   const mobile = useMobileLayout()
   const shareScreen = canShareScreen()
   const processing = useVoiceProcessing()
@@ -43,11 +46,21 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
 
   const micTip = `${micOn ? 'Silenciar microfone' : 'Ligar microfone'}${voiceKeys.mute ? ` [${voiceKeys.mute}]` : ''}`
   const deafenTip = `${deafened ? 'Ativar o áudio' : 'Ensurdecer'}${voiceKeys.deafen ? ` [${voiceKeys.deafen}]` : ''}`
-  const hit = mobile ? 'h-12' : 'h-10'
+  const hit = mobile ? 'h-12 px-4' : 'h-11 px-4'
+  const icon = 'h-5 w-5'
+  const signal =
+    status === 'connected' ? 'text-emerald-400' : status === 'reconnecting' || status === 'connecting' ? 'text-amber-300' : 'text-red-400'
+  const signalLabel =
+    status === 'connected' ? 'Voz conectada' : status === 'reconnecting' ? 'Reconectando' : status === 'connecting' ? 'Conectando' : 'Desconectado'
 
   return (
-    <div className="flex shrink-0 justify-center px-4 py-3">
-      <div className="flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-panel/95 px-3 py-2 shadow-2xl ring-1 ring-white/10">
+    <div className="flex shrink-0 items-center justify-center px-4 py-3">
+      <div className="flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-panel/95 p-2 shadow-2xl ring-1 ring-white/10">
+        <span className="inline-flex h-11 items-center gap-2 rounded-xl px-3 text-sm font-medium text-ink" title={latency !== null ? `${latency} ms` : signalLabel}>
+          <Signal className={`h-5 w-5 ${signal}`} aria-hidden="true" />
+          <span className="text-muted">{signalLabel}</span>
+          {status === 'connected' && latency !== null ? <span className="text-xs text-muted">{latency} ms</span> : null}
+        </span>
         {shareScreen && sharing ? (
           <>
             <button
@@ -56,7 +69,7 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
               onClick={onSwap}
               className={`dock-rise inline-flex ${hit} items-center gap-2 rounded-xl bg-elevated px-3 text-sm text-ink ring-1 ring-line transition-all duration-200 ease-out hover:bg-app active:scale-95 disabled:cursor-not-allowed disabled:opacity-40`}
             >
-              <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
+              <ArrowLeftRight className={icon} aria-hidden="true" />
               Trocar tela/qualidade [{hotkey}]
             </button>
             <button
@@ -65,7 +78,7 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
               onClick={onStop}
               className={`dock-rise inline-flex ${hit} items-center gap-2 rounded-xl bg-danger px-3 text-sm font-semibold text-white transition-all duration-200 ease-out active:scale-95 disabled:cursor-not-allowed disabled:opacity-40`}
             >
-              <Square className="h-4 w-4" aria-hidden="true" />
+              <Square className={icon} aria-hidden="true" />
               Parar tela
             </button>
           </>
@@ -76,7 +89,7 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
             onClick={onShare}
             className={`inline-flex ${hit} items-center gap-2 rounded-xl bg-blurple px-3 text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40`}
           >
-            <ScreenShare className="h-4 w-4" aria-hidden="true" />
+            <ScreenShare className={icon} aria-hidden="true" />
             [{hotkey}] Compartilhar tela
           </button>
         ) : null}
@@ -86,7 +99,7 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
           onClick={onWebcam}
           className={`inline-flex ${hit} items-center gap-2 rounded-xl px-3 text-sm font-semibold transition-all duration-200 ease-out active:scale-95 ${webcamLive ? 'bg-danger text-white' : shareScreen ? 'bg-elevated text-ink ring-1 ring-line' : 'bg-blurple text-white'}`}
         >
-          <Video className="h-4 w-4" aria-hidden="true" />
+          <Video className={icon} aria-hidden="true" />
           {webcamLive ? 'Desligar webcam' : 'Ligar webcam'}
         </button>
         {mobile && webcamLive && onFlipCamera ? (
@@ -98,7 +111,7 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
             aria-label="Alternar câmera frontal e traseira"
             className={`inline-flex ${hit} items-center gap-2 rounded-xl bg-elevated px-3 text-sm text-ink ring-1 ring-line transition-all duration-200 ease-out active:scale-95 disabled:opacity-40`}
           >
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            <RefreshCw className={icon} aria-hidden="true" />
             Virar
           </button>
         ) : null}
@@ -108,9 +121,9 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
           title={micTip}
           aria-label={micTip}
           aria-pressed={micOn}
-          className={`inline-flex ${hit} ${mobile ? 'w-12' : 'w-10'} items-center justify-center rounded-xl transition-all duration-200 ease-out active:scale-95 ${micOn ? 'bg-elevated text-ink ring-1 ring-line' : 'bg-danger/90 text-white'}`}
+          className={`inline-flex ${hit} w-11 items-center justify-center rounded-xl px-0 transition-all duration-200 ease-out active:scale-95 ${micOn ? 'bg-elevated text-ink ring-1 ring-line' : 'bg-danger/90 text-white'}`}
         >
-          {micOn ? <Mic className="h-4 w-4" aria-hidden="true" /> : <MicOff className="h-4 w-4" aria-hidden="true" />}
+          {micOn ? <Mic className={icon} aria-hidden="true" /> : <MicOff className={icon} aria-hidden="true" />}
         </button>
         <button
           type="button"
@@ -118,9 +131,9 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
           title="Supressão de Ruído IA (RNNoise)"
           aria-label="Supressão de Ruído IA (RNNoise)"
           aria-pressed={processing.mode === 'rnnoise'}
-          className={`inline-flex ${hit} ${mobile ? 'w-12' : 'w-10'} items-center justify-center rounded-xl transition-all duration-200 ease-out active:scale-95 ${processing.mode === 'rnnoise' ? 'bg-blurple text-white' : 'bg-elevated text-ink ring-1 ring-line'}`}
+          className={`inline-flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-200 ease-out active:scale-95 ${processing.mode === 'rnnoise' ? 'bg-blurple text-white' : 'bg-elevated text-ink ring-1 ring-line'}`}
         >
-          <AudioWaveform className="h-4 w-4" aria-hidden="true" />
+          <AudioWaveform className={icon} aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -128,16 +141,16 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
           title={deafenTip}
           aria-label={deafenTip}
           aria-pressed={deafened}
-          className={`inline-flex ${hit} ${mobile ? 'w-12' : 'w-10'} items-center justify-center rounded-xl transition-all duration-200 ease-out active:scale-95 ${deafened ? 'bg-danger/90 text-white' : 'bg-elevated text-ink ring-1 ring-line'}`}
+          className={`inline-flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-200 ease-out active:scale-95 ${deafened ? 'bg-danger/90 text-white' : 'bg-elevated text-ink ring-1 ring-line'}`}
         >
-          {deafened ? <HeadphoneOff className="h-4 w-4" aria-hidden="true" /> : <Headphones className="h-4 w-4" aria-hidden="true" />}
+          {deafened ? <HeadphoneOff className={icon} aria-hidden="true" /> : <Headphones className={icon} aria-hidden="true" />}
         </button>
         <button
           type="button"
           onClick={onSettings}
           className={`inline-flex ${hit} items-center gap-2 rounded-xl bg-elevated px-3 text-sm text-ink ring-1 ring-line transition-all duration-200 ease-out hover:bg-app active:scale-95`}
         >
-          <Settings className="h-4 w-4" aria-hidden="true" />
+          <Settings className={icon} aria-hidden="true" />
           Ajustes
         </button>
         <button
@@ -145,7 +158,7 @@ export function ControlBar({ sharing, webcamLive, micOn, deafened, busy, onToggl
           onClick={onLeave}
           className={`inline-flex ${hit} items-center gap-2 rounded-xl bg-elevated px-3 text-sm text-ink ring-1 ring-line transition-all duration-200 ease-out hover:bg-app active:scale-95`}
         >
-          <LogOut className="h-4 w-4" aria-hidden="true" />
+          <LogOut className={icon} aria-hidden="true" />
           Sair da sala
         </button>
       </div>

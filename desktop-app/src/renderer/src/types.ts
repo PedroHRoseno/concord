@@ -84,6 +84,7 @@ export type ClientMessage =
   | { type: 'stream-meta'; streamId: string; meta: StreamMeta | null }
   | { type: 'watch'; streamId: string }
   | { type: 'unwatch'; streamId: string }
+  | { type: 'stream-preview'; streamId: string; image: string; to?: string }
   | { type: 'ping' }
 
 export type ServerMessage =
@@ -102,6 +103,7 @@ export type ServerMessage =
   | { type: 'pong' }
   | { type: 'rooms'; rooms: RoomCard[] }
   | { type: 'rooms-updated'; rooms: RoomCard[] }
+  | { type: 'stream-preview'; peerId: string; streamId: string; image: string }
   | { type: 'error'; message: string }
 
 export interface TurnCredentials {
@@ -130,6 +132,24 @@ export interface RemoteStreamView {
   pc: RTCPeerConnection | null
   watchers: WatcherInfo[]
   reconnecting: boolean
+  preview: string
+  hidden: boolean
+  slotKey: string
+}
+
+/** Card que permanece na tela enquanto a live de tela tenta voltar. */
+export interface ScreenGhost {
+  slotKey: string
+  peerId: string
+  name: string
+  avatarDataUrl: string
+  accentColor: string
+  customStatus: string
+  sourceName: string
+  streamId: string
+  poster: string
+  expiresAt: number
+  meta: StreamMeta
 }
 
 export interface PeerView {

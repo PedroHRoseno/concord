@@ -1,13 +1,15 @@
-import { Eye, GripHorizontal } from 'lucide-react'
+import { Eye, GripHorizontal, Play } from 'lucide-react'
 import { Avatar } from '@renderer/components/Avatar'
 import { IDLE_MS, useActivity } from '@renderer/hooks/useIdle'
 import type { StreamMeta, WatcherInfo } from '@renderer/types'
 import { formatBitrateCap } from '@renderer/types'
 import { VideoStage, type FloatCam, type StreamDetails } from '@renderer/components/VideoStage'
 import type { DesktopAudioRoute } from '@renderer/lib/audio-loopback'
+import type { RefObject } from 'react'
 
 export interface StageEntry {
   id: string
+  slotKey: string
   name: string
   isSelf: boolean
   avatarDataUrl: string
@@ -21,6 +23,9 @@ export interface StageEntry {
   watchers: WatcherInfo[]
   peerId: string
   reconnecting: boolean
+  previewOnly?: boolean
+  ghost?: boolean
+  poster?: string
 }
 
 interface StreamCardProps {
@@ -36,8 +41,11 @@ interface StreamCardProps {
   onMuted: (value: boolean) => void
   onWatch: () => void
   onUnwatch: () => void
+  onHide: () => void
   onFocus: () => void
   onExitFocus: () => void
+  fullscreenHost?: RefObject<HTMLElement | null>
+  onFrame?: (image: string) => void
 }
 
 function detailsOf(entry: StageEntry, audioRoute: DesktopAudioRoute): StreamDetails {
@@ -71,12 +79,17 @@ export function StreamCard({
   onMuted,
   onWatch,
   onUnwatch,
+  onHide,
   onFocus,
-  onExitFocus
+  onExitFocus,
+  fullscreenHost,
+  onFrame
 }: StreamCardProps) {
   const { active: chrome, ping, hide } = useActivity(IDLE_MS, true, false)
-  const showVideo = entry.isSelf ? Boolean(entry.media) : entry.watching && Boolean(entry.media)
-  const connecting = !entry.isSelf && entry.watching && !entry.media
+  const showVideo = !entry.ghost && !entry.previewOnly && (entry.isSelf ? Boolean(entry.media) : entry.watching && Boolean(entry.media))
+  const connecting = !entry.isSelf && !entry.ghost && !entry.previewOnly && entry.watching && !entry.media
+  const poster = entry.poster || ''
+  const accent = entry.accentColor || '#5865F2'
   const watcherNames = entry.watchers.map((watcher) => watcher.displayName).join(', ')
   const label = entry.isSelf ? `${entry.name} (você)` : entry.name
 
@@ -119,7 +132,46 @@ export function StreamCard({
             onFocus={onFocus}
             onExitFocus={onExitFocus}
             onToggleWatch={entry.isSelf ? null : entry.watching ? onUnwatch : onWatch}
+            fullscreenHost={fullscreenHost}
+            onFrame={onFrame}
           />
+        ) : entry.previewOnly ? (
+          <div className="relative h-full w-full overflow-hidden">
+            {poster ? (
+              <img src={poster} alt="" className="absolute inset-0 h-full w-full scale-105 object-cover blur-md brightness-50" />
+            ) : (
+              <div className="absolute inset-0" style={{ background: `linear-gradient(160deg, ${accent} 0%, #09090b 70%)` }}>
+                <div className="absolute inset-0 flex items-center justify-center opacity-40 blur-md">
+                  <Avatar name={entry.name} src={entry.avatarDataUrl} accent={accent} peerId={entry.peerId} size="lg" />
+                </div>
+              </div>
+            )}
+            <div className="relative flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+              <button
+                type="button"
+                onClick={onWatch}
+                className="stage-no-drag inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-zinc-950 shadow-2xl hover:bg-zinc-100"
+              >
+                <Play className="h-5 w-5 fill-current" aria-hidden="true" />
+                Assistir Transmissão
+              </button>
+              <p className="max-w-xs truncate text-sm text-white/80">{entry.meta.sourceName}</p>
+              <button type="button" onClick={onHide} className="stage-no-drag text-xs font-medium text-white/70 underline-offset-2 hover:text-white hover:underline">
+                Ocultar
+              </button>
+            </div>
+          </div>
+        ) : entry.ghost ? (
+          <div className="relative h-full w-full overflow-hidden">
+            {poster ? (
+              <img src={poster} alt="" className="absolute inset-0 h-full w-full scale-105 object-cover blur-md brightness-50" />
+            ) : (
+              <div className="absolute inset-0" style={{ background: `linear-gradient(160deg, ${accent} 0%, #09090b 72%)` }} />
+            )}
+            <div className="relative flex h-full items-center justify-center px-6 text-center text-sm font-medium text-white">
+              Reconectando transmissão de {entry.name}...
+            </div>
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center bg-black px-4 text-center text-sm text-muted">
             {connecting ? 'Conectando à transmissão…' : 'Transmissão disponível'}

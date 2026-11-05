@@ -11,6 +11,7 @@ interface DesktopSource {
   name: string
   thumbnail: string
   appIcon: string | null
+  minimized?: boolean
 }
 
 interface SourcePickerModalProps {
@@ -249,7 +250,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                 <div className="rounded-xl bg-app p-3 text-xs leading-5 text-muted ring-1 ring-line">
                   <p className="font-semibold text-ink">A lista se atualiza sozinha. Se o jogo ainda não aparece:</p>
                   <ul className="mt-1 list-disc space-y-1 pl-5">
-                    <li>Abra o jogo até chegar à janela dele e espere alguns segundos. Janelas minimizadas ou em outra área de trabalho não podem ser capturadas: restaure a janela.</li>
+                    <li>Janelas minimizadas entram na lista com a tag "Janela minimizada". Ao escolher uma, o Concord restaura a janela antes de capturar.</li>
                     <li>Tela cheia exclusiva (comum em jogos antigos) costuma falhar ou ficar preta. Troque para "Janela sem bordas" nas opções gráficas ou use a aba Telas inteiras.</li>
                     <li>Se o jogo roda como administrador, abra o Concord como administrador também.</li>
                     <li>Launchers e anti-cheat podem esconder o título da janela. Nesses casos, compartilhe a tela inteira.</li>
@@ -288,10 +289,23 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                     onClick={() => setSelectedId(source.id)}
                     className={`overflow-hidden rounded-xl bg-app text-left ring-2 ${active ? 'ring-blurple' : 'ring-transparent hover:ring-line'}`}
                   >
-                    {source.thumbnail ? (
+                    {source.thumbnail && !source.minimized ? (
                       <img src={source.thumbnail} alt="" className="aspect-video w-full bg-black object-cover" />
                     ) : (
-                      <div className="flex aspect-video items-center justify-center bg-black text-xs text-muted">Sem miniatura</div>
+                      <div className="flex aspect-video flex-col items-center justify-center gap-2 bg-gradient-to-br from-zinc-800 to-black">
+                        {source.appIcon ? (
+                          <img src={source.appIcon} alt="" className="h-10 w-10" />
+                        ) : tab === 'screen' ? (
+                          <Monitor className="h-10 w-10 text-white/70" aria-hidden="true" />
+                        ) : (
+                          <AppWindow className="h-10 w-10 text-white/70" aria-hidden="true" />
+                        )}
+                        {source.minimized ? (
+                          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">Janela minimizada</span>
+                        ) : (
+                          <span className="text-xs text-muted">Sem miniatura</span>
+                        )}
+                      </div>
                     )}
                     <span className="flex items-center gap-2 px-2 py-2">
                       {source.appIcon ? (

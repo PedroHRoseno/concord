@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import {
   Activity,
   Expand,
@@ -71,6 +71,8 @@ interface VideoStageProps {
   onFocus: () => void
   onExitFocus: () => void
   onToggleWatch: (() => void) | null
+  fullscreenHost?: RefObject<HTMLElement | null>
+  onFrame?: (image: string) => void
 }
 
 interface WebkitVideo extends HTMLVideoElement {
@@ -186,7 +188,9 @@ export function VideoStage({
   onMuted,
   onFocus,
   onExitFocus,
-  onToggleWatch
+  onToggleWatch,
+  fullscreenHost,
+  onFrame
 }: VideoStageProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -296,7 +300,7 @@ export function VideoStage({
 
   useEffect(() => {
     const onChange = () => {
-      const node = containerRef.current
+      const node = fullscreenHost?.current ?? containerRef.current
       if (!node) return
       if (document.fullscreenElement === node) {
         // Um pedido nativo que demorou a responder venceu o fallback: troca para o modo nativo.
@@ -314,7 +318,27 @@ export function VideoStage({
     }
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
-  }, [])
+  }, [fullscreenHost])
+
+  useEffect(() => {
+    if (!onFrame || isSelf) return
+    const grab = (): void => {
+      const video = videoRef.current
+      if (!video || video.readyState < 2 || video.videoWidth < 2) return
+      const width = 480
+      const height = Math.max(1, Math.round((video.videoHeight / video.videoWidth) * width))
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const context = canvas.getContext('2d')
+      if (!context) return
+      context.drawImage(video, 0, 0, width, height)
+      const image = canvas.toDataURL('image/webp', 0.5)
+      if (image.startsWith('data:image/webp;base64,') && image.length <= 48_000) onFrame(image)
+    }
+    const timer = window.setInterval(grab, 1000)
+    return () => window.clearInterval(timer)
+  }, [isSelf, onFrame])
 
   // O Esc já sai da tela cheia nativa; no fallback por CSS ele precisa ser tratado aqui.
   useEffect(() => {
@@ -329,14 +353,37 @@ export function VideoStage({
   }, [fullscreen])
 
   useEffect(() => {
-    const node = containerRef.current
     return () => {
+      const host = fullscreenHost?.current
+      const tile = host?.closest('.stage-tile') as HTMLElement | null
+      const hostHolds =
+        Boolean(host?.isConnected) &&
+        (document.fullscreenElement === host || host?.dataset.present === 'fullscreen' || tile?.dataset.present === 'fullscreen')
+      if (hostHolds) {
+        cssCleanup.current = null
+        fullscreenMode.current = null
+        return
+      }
       cssCleanup.current?.()
       if (fullscreenMode.current === 'css') void window.electronAPI?.setWindowFullscreen?.(false)
+      const node = containerRef.current
       if (node && document.fullscreenElement === node) void document.exitFullscreen().catch(() => undefined)
       fullscreenMode.current = null
     }
-  }, [])
+  }, [fullscreenHost])
+
+  useEffect(() => {
+    const node = fullscreenHost?.current
+    if (!node) return
+    const tile = (node.closest('.stage-tile') as HTMLElement | null) ?? node
+    if (document.fullscreenElement === node) {
+      fullscreenMode.current = 'native'
+      setFullscreen(true)
+    } else if (tile.dataset.present === 'fullscreen') {
+      fullscreenMode.current = 'css'
+      setFullscreen(true)
+    }
+  }, [fullscreenHost, media])
 
   useEffect(() => {
     const video = videoRef.current
@@ -407,6 +454,13 @@ export function VideoStage({
     const mode = fullscreenMode.current
     fullscreenMode.current = null
     releaseTile()
+    const host = fullscreenHost?.current
+    const tile = (host?.closest('.stage-tile') as HTMLElement | null) ?? host
+    if (tile?.dataset.present) {
+      delete tile.dataset.present
+      document.body.classList.remove('live-fullscreen')
+      document.body.style.overflow = ''
+    }
     setFullscreen(false)
     if (document.fullscreenElement) {
       try {
@@ -420,16 +474,19 @@ export function VideoStage({
 
   /** Fallback: estica o tile pelo CSS e põe a janela do app em tela cheia. O <video> não é remontado. */
   async function enterCssFullscreen(node: HTMLElement): Promise<void> {
-    holdTile(tileOf(node), 'is-stage-fullscreen')
+    const surface =
+      fullscreenHost?.current === node ? ((node.closest('.stage-tile') as HTMLElement | null) ?? node) : tileOf(node)
+    holdTile(surface, 'is-stage-fullscreen')
     fullscreenMode.current = 'css'
     setFullscreen(true)
     await window.electronAPI?.setWindowFullscreen?.(true)
   }
 
   async function toggleFullscreen(): Promise<void> {
-    const node = containerRef.current
+    const node = fullscreenHost?.current ?? containerRef.current
     if (!node) return
-    const tile = tileOf(node)
+    const tile =
+      fullscreenHost?.current === node ? ((node.closest('.stage-tile') as HTMLElement | null) ?? node) : tileOf(node)
     const active = fullscreen || tile.dataset.present === 'fullscreen' || document.fullscreenElement === node
     if (active) {
       await leaveFullscreen()

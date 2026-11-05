@@ -1,10 +1,45 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { MonitorUp, Video } from 'lucide-react'
 import { Rnd, type HandleStyles } from 'react-rnd'
+import { Avatar } from '@renderer/components/Avatar'
 import { StreamCard, type StageEntry } from '@renderer/components/StreamCard'
 import type { FloatCam } from '@renderer/components/VideoStage'
 import type { DesktopAudioRoute } from '@renderer/lib/audio-loopback'
 import { useMobileLayout } from '@renderer/lib/platform'
 import { clampTile, cornerLayout, equalGrid, placeNew, type TileBox } from '@renderer/lib/stage-layout'
+
+function tileKey(entry: StageEntry): string {
+  return entry.slotKey || entry.id
+}
+
+function PresentHost({ children }: { children: (host: RefObject<HTMLDivElement | null>) => ReactNode }) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const node = hostRef.current
+    return () => {
+      if (!node) return
+      if (document.fullscreenElement === node) void document.exitFullscreen().catch(() => undefined)
+      if (node.dataset.present === 'fullscreen') {
+        delete node.dataset.present
+        document.body.classList.remove('live-fullscreen')
+        document.body.style.overflow = ''
+        void window.electronAPI?.setWindowFullscreen?.(false)
+      }
+    }
+  }, [])
+  return (
+    <div ref={hostRef} className="h-full w-full">
+      {children(hostRef)}
+    </div>
+  )
+}
+
+export interface StagePerson {
+  peerId: string
+  name: string
+  avatar: string
+  accent: string
+}
 
 interface AudioMix {
   volume: number
@@ -27,7 +62,14 @@ interface StageProps {
   onMix: (id: string, patch: Partial<AudioMix>) => void
   onWatch: (id: string) => void
   onUnwatch: (id: string) => void
+  onHide: (id: string) => void
+  onFrame: (id: string, image: string) => void
   onLayoutChange: (layout: 'grid' | 'focus') => void
+  roomLabel: string
+  people: StagePerson[]
+  onShare: () => void
+  onCamera: () => void
+  canShare: boolean
 }
 
 export interface StageHandle {
@@ -46,7 +88,7 @@ const RESIZE: HandleStyles = {
 }
 
 export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
-  { entries, layout, cameraRail, isolateAudio, audioRoute, mixes, onMix, onWatch, onUnwatch, onLayoutChange },
+  { entries, layout, cameraRail, isolateAudio, audioRoute, mixes, onMix, onWatch, onUnwatch, onHide, onFrame, onLayoutChange, roomLabel, people, onShare, onCamera, canShare },
   ref
 ) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
@@ -67,10 +109,10 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
   const zRef = useRef(1)
   const relayoutRef = useRef<() => void>(() => undefined)
   entriesRef.current = entries
-  const signature = entries.map((entry) => entry.id).join('|')
+  const signature = entries.map((entry) => tileKey(entry)).join('|')
 
   useEffect(() => {
-    if (focusedId && !entries.some((entry) => entry.id === focusedId)) setFocusedId(null)
+    if (focusedId && !entries.some((entry) => tileKey(entry) === focusedId)) setFocusedId(null)
   }, [entries, focusedId])
 
   function commit(next: Record<string, Tile>, move: boolean): void {
@@ -84,7 +126,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     const { w, h } = sizeRef.current
     if (w < 8 || h < 8) return
     const list = entriesRef.current
-    const ids = new Set(list.map((entry) => entry.id))
+    const ids = new Set(list.map((entry) => tileKey(entry)))
     let removed = false
     for (const id of Object.keys(tilesRef.current)) {
       if (!ids.has(id)) {
@@ -93,7 +135,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
         removed = true
       }
     }
-    const missing = list.filter((entry) => !tilesRef.current[entry.id])
+    const missing = list.filter((entry) => !tilesRef.current[tileKey(entry)])
     const forced = pendingRef.current
     const sizeChanged = sizeChangedRef.current
     const oldSize = prevSizeRef.current
@@ -103,33 +145,23 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     if (!forced && sizeChanged && oldSize && oldSize.w >= 8 && oldSize.h >= 8 && list.length > 0 && !empty) {
       if (list.length === 1 && !shrunkRef.current) {
         const box = equalGrid(1, w, h)[0]
-        const current = tilesRef.current[list[0].id]
+        const current = tilesRef.current[tileKey(list[0])]
         if (box) {
-          commit({ [list[0].id]: { ...box, z: current?.z ?? 10 } }, true)
+          commit({ [tileKey(list[0])]: { ...box, z: current?.z ?? 10 } }, true)
           return
         }
       } else if (customRef.current) {
-        const sx = w / oldSize.w
-        const sy = h / oldSize.h
         const next: Record<string, Tile> = {}
         for (const entry of list) {
-          const tile = tilesRef.current[entry.id]
+          const id = tileKey(entry)
+          const tile = tilesRef.current[id]
           if (!tile) continue
-          const scaled = clampTile(
-            {
-              x: Math.round(tile.x * sx),
-              y: Math.round(tile.y * sy),
-              w: Math.max(1, Math.round(tile.w * sx)),
-              h: Math.max(1, Math.round(tile.h * sy))
-            },
-            w,
-            h
-          )
-          next[entry.id] = { ...tile, ...scaled }
+          next[id] = { ...tile, ...clampTile(tile, w, h) }
         }
         for (const entry of list) {
-          if (next[entry.id]) continue
-          next[entry.id] = { ...placeNew(Object.values(next), w, h), z: zInBand(entry.id, Object.values(next)) }
+          const id = tileKey(entry)
+          if (next[id]) continue
+          next[id] = { ...placeNew(Object.values(next), w, h), z: zInBand(id, Object.values(next)) }
         }
         commit(next, true)
         return
@@ -145,7 +177,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
       const next: Record<string, Tile> = {}
       list.forEach((entry, index) => {
         const band = zBand(entry.meta.streamType)
-        next[entry.id] = { ...boxes[index], z: Math.min(band.max, band.min + index) }
+        next[tileKey(entry)] = { ...boxes[index], z: Math.min(band.max, band.min + index) }
       })
       zRef.current = Math.max(10, ...Object.values(next).map((tile) => tile.z))
       if (forced) {
@@ -158,7 +190,8 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     if (missing.length > 0) {
       const next = { ...tilesRef.current }
       for (const entry of missing) {
-        next[entry.id] = { ...placeNew(Object.values(next), w, h), z: zInBand(entry.id, Object.values(next)) }
+        const id = tileKey(entry)
+        next[id] = { ...placeNew(Object.values(next), w, h), z: zInBand(id, Object.values(next)) }
       }
       commit(next, true)
       return
@@ -166,10 +199,12 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     let changed = false
     const next = { ...tilesRef.current }
     for (const entry of list) {
-      const current = next[entry.id]
+      const id = tileKey(entry)
+      const current = next[id]
+      if (!current) continue
       const clamped = clampTile(current, w, h)
       if (clamped.x !== current.x || clamped.y !== current.y || clamped.w !== current.w || clamped.h !== current.h) {
-        next[entry.id] = { ...current, ...clamped }
+        next[id] = { ...current, ...clamped }
         changed = true
       }
     }
@@ -232,7 +267,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
   }
 
   function zInBand(id: string, taken: Tile[]): number {
-    const entry = entriesRef.current.find((item) => item.id === id)
+    const entry = entriesRef.current.find((item) => tileKey(item) === id)
     const band = zBand(entry?.meta.streamType)
     const used = taken.filter((tile) => tile.z >= band.min && tile.z <= band.max).map((tile) => tile.z)
     const top = used.length > 0 ? Math.max(...used) : band.min - 1
@@ -243,10 +278,10 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     const tiles = tilesRef.current
     const tile = tiles[id]
     if (!tile) return
-    const entry = entriesRef.current.find((item) => item.id === id)
+    const entry = entriesRef.current.find((item) => tileKey(item) === id)
     const band = zBand(entry?.meta.streamType)
     const same = Object.entries(tiles).filter(([key]) => {
-      const other = entriesRef.current.find((item) => item.id === key)
+      const other = entriesRef.current.find((item) => tileKey(item) === key)
       return zBand(other?.meta.streamType).min === band.min
     })
     const top = Math.max(...same.map(([, item]) => item.z))
@@ -309,7 +344,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
       }))
   }
 
-  function card(entry: StageEntry, fill: boolean, focused: boolean, canvas: boolean) {
+  function card(entry: StageEntry, fill: boolean, focused: boolean, canvas: boolean, host: RefObject<HTMLDivElement | null>) {
     const locked = isolateAudio && !entry.isSelf
     return (
       <StreamCard
@@ -325,9 +360,12 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
         onMuted={(muted) => updateMix(entry.id, { muted })}
         onWatch={() => onWatch(entry.id)}
         onUnwatch={() => onUnwatch(entry.id)}
+        onHide={() => onHide(entry.id)}
+        fullscreenHost={host}
+        onFrame={(image) => onFrame(entry.id, image)}
         onFocus={() => {
           const hasScreen = entries.some((item) => item.meta.streamType === 'screen')
-          if (entry.meta.streamType === 'screen' || !hasScreen) setFocusedId(entry.id)
+          if (entry.meta.streamType === 'screen' || !hasScreen) setFocusedId(tileKey(entry))
           onLayoutChange('focus')
         }}
         onExitFocus={() => {
@@ -338,10 +376,45 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     )
   }
 
+  function hosted(entry: StageEntry, fill: boolean, focused: boolean, canvas: boolean) {
+    return <PresentHost>{(host) => card(entry, fill, focused, canvas, host)}</PresentHost>
+  }
+
   if (entries.length === 0) {
+    const count = people.length
     return (
-      <div className="flex h-full min-h-0 items-center justify-center overflow-hidden px-6 text-center text-sm text-muted">
-        Nenhuma live selecionada. Escolha alguém na lista ou compartilhe sua tela.
+      <div className="flex h-full min-h-0 items-center justify-center overflow-hidden px-6">
+        <div className="flex w-full max-w-xl flex-col items-center rounded-3xl border border-white/10 bg-white/[0.04] px-8 py-10 text-center shadow-2xl">
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {people.slice(0, 8).map((person) => (
+              <Avatar key={person.peerId} name={person.name} src={person.avatar} accent={person.accent} peerId={person.peerId} size="lg" />
+            ))}
+          </div>
+          <h2 className="mt-6 text-xl font-bold text-ink">Sala {roomLabel}</h2>
+          <p className="mt-2 text-sm text-muted">
+            {count === 1 ? 'Você está na call.' : `${count} amigos estão na call.`}
+          </p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+            {canShare ? (
+              <button
+                type="button"
+                onClick={onShare}
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-blurple px-4 text-sm font-semibold text-white hover:bg-[#4752c4]"
+              >
+                <MonitorUp className="h-5 w-5" aria-hidden="true" />
+                Compartilhar minha tela
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onCamera}
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-ink hover:bg-white/15"
+            >
+              <Video className="h-5 w-5" aria-hidden="true" />
+              Ligar minha câmera
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -350,9 +423,9 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
   const webcams = entries.filter((entry) => entry.meta.streamType === 'webcam')
   const main =
     layout === 'focus'
-      ? (screens.find((entry) => entry.id === focusedId) ??
+      ? (screens.find((entry) => tileKey(entry) === focusedId) ??
         screens[0] ??
-        webcams.find((entry) => entry.id === focusedId) ??
+        webcams.find((entry) => tileKey(entry) === focusedId) ??
         webcams[0] ??
         null)
       : null
@@ -362,8 +435,8 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     return (
       <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3">
         {stack.map((entry, index) => (
-          <div key={entry.id} className={index === 0 && main ? 'h-[52vh] w-full shrink-0' : 'aspect-video w-full shrink-0'}>
-            {card(entry, true, Boolean(main) && index === 0, false)}
+          <div key={tileKey(entry)} className={index === 0 && main ? 'h-[52vh] w-full shrink-0' : 'aspect-video w-full shrink-0'}>
+            {hosted(entry, true, Boolean(main) && index === 0, false)}
           </div>
         ))}
       </div>
@@ -384,8 +457,8 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
           }
         >
           {strip.map((entry) => (
-            <div key={entry.id} className={horizontal ? 'aspect-video w-56 min-w-40 max-w-72 flex-1' : 'w-full shrink-0'}>
-              {card(entry, false, false, false)}
+            <div key={tileKey(entry)} className={horizontal ? 'aspect-video w-56 min-w-40 max-w-72 flex-1' : 'w-full shrink-0'}>
+              {hosted(entry, false, false, false)}
             </div>
           ))}
         </div>
@@ -393,7 +466,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     const stagePane = (
       <div className="relative min-h-0 min-w-0 flex-1 p-3">
         {main ? (
-          card(main, true, true, false)
+          hosted(main, true, true, false)
         ) : (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
             Nenhuma live em foco. As câmeras ficam na faixa.
@@ -416,13 +489,14 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
   return (
     <div ref={canvasRef} className="stage-canvas relative h-full min-h-0 w-full overflow-hidden">
       {entries.map((entry) => {
-        const tile = tiles[entry.id]
+        const id = tileKey(entry)
+        const tile = tiles[id]
         if (!tile) return null
         return (
           <Rnd
-            key={entry.id}
+            key={id}
             ref={(node) => {
-              rndRefs.current[entry.id] = node
+              rndRefs.current[id] = node
             }}
             default={{ x: tile.x, y: tile.y, width: tile.w, height: tile.h }}
             bounds="parent"
@@ -434,25 +508,25 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
             resizeHandleStyles={RESIZE}
             className="stage-tile"
             style={{ zIndex: tile.z }}
-            onMouseDown={() => bringToFront(entry.id)}
+            onMouseDown={() => bringToFront(id)}
             onDragStart={() => {
-              bringToFront(entry.id)
+              bringToFront(id)
               markGesture(true)
             }}
             onDragStop={() => {
-              remember(entry.id)
+              remember(id)
               markGesture(false)
             }}
             onResizeStart={() => {
-              bringToFront(entry.id)
+              bringToFront(id)
               markGesture(true)
             }}
             onResizeStop={(_event, _direction, element) => {
-              remember(entry.id, element)
+              remember(id, element)
               markGesture(false)
             }}
           >
-            <div className="h-full w-full">{card(entry, true, false, true)}</div>
+            {hosted(entry, true, false, true)}
           </Rnd>
         )
       })}

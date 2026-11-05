@@ -2,6 +2,29 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [1.8.1] - 2026-11-05
+
+### Adicionado
+
+- Prévia WebP da transmissão de tela, enviada na hora para quem entra na sala.
+- Escala da interface no desktop, com 90% a 150%, atalhos Ctrl + =, Ctrl + - e Ctrl + 0, e escala automática em monitores grandes.
+- Seção Aparência nos ajustes.
+
+### Melhorado
+
+- Uma queda curta da live mantém o card e a tela cheia por 10 segundos, com o último quadro e a reconexão automática.
+- O seletor de sala abre por cima da janela, com quem está em cada sala e a opção de criar uma sala.
+- O estado da conexão fica no dock, com o ping.
+- Toda transmissão de tela aparece no palco como card para assistir, e o botão na lista da sala ocupa a largura do card.
+- O lobby separa o perfil das salas, e cada sala mostra o nome de quem está dentro.
+- A grade recalcula cards 16:9 ao redimensionar a janela.
+- A barra lateral, o dock e a barra de layout ficam maiores. O palco vazio vira um painel da sala.
+
+### Corrigido
+
+- Janela minimizada no Windows volta à lista de captura e é restaurada antes de compartilhar.
+- A tela cheia não fecha quando a transmissão oscila por um instante.
+
 ## [1.8.0] - 2026-11-03
 
 ### Adicionado

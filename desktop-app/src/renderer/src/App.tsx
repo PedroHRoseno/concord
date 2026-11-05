@@ -29,6 +29,36 @@ function MainApp() {
   }, [])
 
   useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      if (event.shiftKey && event.key !== '+' && event.key !== '=') return
+      const target = event.target
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return
+      }
+      const api = window.electronAPI
+      if (!api?.setZoomFactor || !api.getZoomFactor) return
+      if (event.key === '0') {
+        event.preventDefault()
+        api.setZoomFactor(1)
+        return
+      }
+      if (event.key === '=' || event.key === '+' || event.key === 'Add') {
+        event.preventDefault()
+        api.setZoomFactor(api.getZoomFactor() + 0.1)
+        return
+      }
+      if (event.key === '-' || event.key === '_' || event.key === 'Subtract') {
+        event.preventDefault()
+        api.setZoomFactor(api.getZoomFactor() - 0.1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
     const publication =
       room.phase === 'room'
         ? (room.locals.find((item) => item.meta.streamType === 'screen') ??
@@ -46,7 +76,6 @@ function MainApp() {
     <div className="flex h-full flex-col bg-app text-ink">
       <AndroidUpdateNotice />
       <Titlebar
-        status={room.phase === 'room' ? room.status : undefined}
         roomId={room.phase === 'room' ? room.self?.roomId : undefined}
         displayName={room.phase === 'room' ? room.self?.displayName : undefined}
         avatar={room.phase === 'room' ? room.profile.avatarDataUrl : undefined}

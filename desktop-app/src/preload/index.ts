@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron'
 
 interface QuickShareSettings {
   sourceId: string
@@ -32,6 +32,31 @@ interface UpdateStatus {
 
 let audioPort: MessagePort | null = null
 
+const ZOOM_KEY = 'concord.ui.zoom'
+
+function clampZoom(value: number): number {
+  if (!Number.isFinite(value)) return 1
+  return Math.min(1.5, Math.max(0.8, Math.round(value * 100) / 100))
+}
+
+function initialZoom(): number {
+  try {
+    const stored = localStorage.getItem(ZOOM_KEY)
+    if (stored) {
+      const value = Number(stored)
+      if (Number.isFinite(value)) return clampZoom(value)
+    }
+  } catch {
+    /* a escala automática segue */
+  }
+  const width = screen.width
+  if (width >= 3200) return 1.25
+  if (width >= 2200) return 1.15
+  return 1
+}
+
+webFrame.setZoomFactor(initialZoom())
+
 const api = {
   getDesktopSources: (): Promise<
     Array<{
@@ -40,6 +65,7 @@ const api = {
       thumbnail: string
       appIcon: string | null
       displayId: string
+      minimized?: boolean
     }>
   > => ipcRenderer.invoke('sources:list'),
   getSourcesSignature: (): Promise<string> => ipcRenderer.invoke('sources:signature'),
@@ -139,6 +165,17 @@ const api = {
     return () => ipcRenderer.removeListener('window:maximized', wrapped)
   },
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
+  setZoomFactor: (factor: number): number => {
+    const next = clampZoom(factor)
+    webFrame.setZoomFactor(next)
+    try {
+      localStorage.setItem(ZOOM_KEY, String(next))
+    } catch {
+      /* a escala vale nesta sessão */
+    }
+    return next
+  },
+  getZoomFactor: (): number => webFrame.getZoomFactor(),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke('update:check'),
   startDownload: (): void => {
     ipcRenderer.send('start-download')

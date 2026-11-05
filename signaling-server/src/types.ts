@@ -92,6 +92,7 @@ export type ClientMessage =
   | { type: 'stream-meta'; streamId: string; meta: StreamMeta | null }
   | { type: 'watch'; streamId: string }
   | { type: 'unwatch'; streamId: string }
+  | { type: 'stream-preview'; streamId: string; image: string; to?: string }
   | { type: 'ping' }
 
 export type ServerMessage =
@@ -110,6 +111,7 @@ export type ServerMessage =
   | { type: 'pong' }
   | { type: 'rooms'; rooms: RoomCard[] }
   | { type: 'rooms-updated'; rooms: RoomCard[] }
+  | { type: 'stream-preview'; peerId: string; streamId: string; image: string }
   | { type: 'error'; message: string }
 
 const AVATAR_LIMIT = 12_000
@@ -169,6 +171,7 @@ export function isStreamMeta(value: unknown): value is StreamMeta {
 
 export const CHAT_TEXT_MAX = 2000
 export const CHAT_IMAGE_MAX = 90_000
+export const PREVIEW_IMAGE_MAX = 48_000
 const IMAGE_PREFIX = 'data:image/webp;base64,'
 
 export function parseFeatures(value: unknown): Set<Feature> {

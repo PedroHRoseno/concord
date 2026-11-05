@@ -74,12 +74,15 @@ const WIDTH_KEY = 'screenshare.sidebar.width'
 
 function readSidebarWidth(): number {
   try {
-    const value = Number(localStorage.getItem(WIDTH_KEY))
-    if (Number.isFinite(value)) return Math.min(450, Math.max(200, value))
+    const raw = localStorage.getItem(WIDTH_KEY)
+    if (raw !== null) {
+      const value = Number(raw)
+      if (Number.isFinite(value)) return Math.min(480, Math.max(200, value))
+    }
   } catch {
     /* a largura padrão continua valendo */
   }
-  return 256
+  return window.innerWidth >= 1536 ? 384 : 320
 }
 
 export function MemberList({
@@ -115,7 +118,7 @@ export function MemberList({
   function resize(event: ReactPointerEvent<HTMLDivElement>): void {
     const current = drag.current
     if (!current) return
-    setWidth(Math.min(450, Math.max(200, current.width + (current.x - event.clientX))))
+    setWidth(Math.min(480, Math.max(200, current.width + (current.x - event.clientX))))
   }
 
   useEffect(() => {
@@ -233,7 +236,7 @@ export function MemberList({
               key={person.peerId}
               role="button"
               tabIndex={0}
-              className="group cursor-pointer rounded-lg px-2 py-1.5 transition-all hover:bg-white/[0.06] active:scale-[0.99]"
+              className="group cursor-pointer rounded-lg p-3 transition-all hover:bg-white/[0.06] active:scale-[0.99]"
               onClick={(event) => {
                 if ((event.target as HTMLElement).closest('button, a, input, label')) return
                 openMenu(person, event.clientX, event.clientY)
@@ -256,7 +259,7 @@ export function MemberList({
                   accent={person.profile.accentColor}
                   live={Boolean(screen || webcam)}
                   peerId={person.peerId}
-                  size="sm"
+                  size="md"
                 />
                 <span className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{person.name}</p>
@@ -268,9 +271,11 @@ export function MemberList({
                 </span>
               </div>
               {screen ? (
-                <div className="mt-1 flex items-center gap-1.5 pl-9 text-xs text-muted">
-                  <Monitor className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate">{screen.meta.sourceName}</span>
+                <div className="mt-2 space-y-2 pl-12">
+                  <div className="flex items-center gap-1.5 text-sm text-muted">
+                    <Monitor className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate">{screen.meta.sourceName}</span>
+                  </div>
                   {!person.self ? (
                     <button
                       type="button"
@@ -279,9 +284,9 @@ export function MemberList({
                         if (screen.watching) onUnwatch(screen.meta.streamId)
                         else onWatch(screen.meta.streamId)
                       }}
-                      className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-ink hover:bg-white/15"
+                      className={`w-full rounded-lg py-2 text-sm font-medium ${screen.watching ? 'bg-white/10 text-ink hover:bg-white/15' : 'bg-emerald-500/90 text-white hover:bg-emerald-400'}`}
                     >
-                      {screen.watching ? 'Sair' : 'Assistir'}
+                      {screen.watching ? '⏹ Deixar Transmissão' : '▶ Assistir Transmissão'}
                     </button>
                   ) : null}
                 </div>

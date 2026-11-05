@@ -30,6 +30,7 @@ import type {
   LocalPublication,
   PeerView,
   RoomCard,
+  ScreenGhost,
   UserProfile,
   WebcamSettings
 } from '@renderer/types'
@@ -110,6 +111,8 @@ export function useRoom() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [signalingUrl, setSignalingUrl] = useState('')
   const [rooms, setRooms] = useState<RoomCard[]>([])
+  const [ghosts, setGhosts] = useState<ScreenGhost[]>([])
+  const [latency, setLatency] = useState<number | null>(null)
   const [rosterReady, setRosterReady] = useState(false)
   const lastInputRef = useRef<LobbyInput | null>(null)
   const micRef = useRef(false)
@@ -260,9 +263,11 @@ export function useRoom() {
         onStatus: setStatus,
         onSnapshot: (snapshot) => {
           setPeers(snapshot.peers)
+          setGhosts(snapshot.ghosts)
           setRosterReady(true)
         },
         onRooms: setRooms,
+        onLatency: setLatency,
         onLocals: (publications) => {
           if (!publications.some((item) => item.meta.streamType === 'screen')) {
             releaseSystemAudioAnchor()
@@ -288,6 +293,8 @@ export function useRoom() {
     setChatMessages([])
     setRosterReady(false)
     setRooms([])
+    setGhosts([])
+    setLatency(null)
     lastInputRef.current = { ...input, displayName, roomId, profile: saved }
     sessionRef.current = session
     setProfile(saved)
@@ -324,6 +331,8 @@ export function useRoom() {
     releaseSystemAudioAnchor()
     setPhase('lobby')
     setPeers([])
+    setGhosts([])
+    setLatency(null)
     setLocals([])
     setSelf(null)
     setError(null)
@@ -401,6 +410,14 @@ export function useRoom() {
     sessionRef.current?.unwatch(streamId)
   }, [])
 
+  const hideScreen = useCallback((streamId: string) => {
+    sessionRef.current?.hideScreen(streamId)
+  }, [])
+
+  const noteFrame = useCallback((streamId: string, image: string) => {
+    sessionRef.current?.noteFrame(streamId, image)
+  }, [])
+
   const updateProfile = useCallback((next: UserProfile) => {
     const saved = writeProfile(next)
     setProfile(saved)
@@ -430,6 +447,8 @@ export function useRoom() {
     deafened,
     signalingUrl,
     rooms,
+    ghosts,
+    latency,
     rosterReady,
     switchRoom,
     setVoiceState,
@@ -447,6 +466,8 @@ export function useRoom() {
     stopShare,
     watch,
     unwatch,
+    hideScreen,
+    noteFrame,
     updateProfile,
     dismissError
   }

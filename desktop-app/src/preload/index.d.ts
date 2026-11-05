@@ -4,6 +4,7 @@ export interface DesktopSourceInfo {
   thumbnail: string
   appIcon: string | null
   displayId: string
+  minimized?: boolean
 }
 
 export interface CapturePrepareOptions {
@@ -67,6 +68,8 @@ export interface ElectronBridge {
   setWindowFullscreen: (value: boolean) => Promise<boolean>
   onMaximized: (listener: (maximized: boolean) => void) => () => void
   getVersion: () => Promise<string>
+  setZoomFactor: (factor: number) => number
+  getZoomFactor: () => number
   checkForUpdates: () => Promise<void>
   startDownload: () => void
   installUpdate: () => void

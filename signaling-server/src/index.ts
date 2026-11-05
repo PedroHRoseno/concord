@@ -169,6 +169,9 @@ wss.on('connection', (socket) => {
       case 'voice-state':
         hub.voiceState(socket, message.speaking === true, message.muted === true)
         return
+      case 'stream-preview':
+        hub.relayPreview(socket, message.streamId, message.image, message.to)
+        return
       default:
         socket.send(JSON.stringify({ type: 'error', message: 'Tipo de mensagem desconhecido.' }))
     }

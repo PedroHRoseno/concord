@@ -179,7 +179,7 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
   return (
     <main className="flex h-full items-center justify-center overflow-y-auto bg-app p-6">
       <form
-        className="w-full max-w-md rounded-2xl bg-elevated p-6 shadow-2xl ring-1 ring-white/10"
+        className="grid w-full max-w-5xl items-start gap-8 md:grid-cols-12"
         onSubmit={(event) => {
           event.preventDefault()
           try {
@@ -192,9 +192,10 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
           onJoin(input)
         }}
       >
+        <section className="rounded-2xl bg-elevated p-6 shadow-2xl ring-1 ring-white/10 md:col-span-5">
         <img src={logo} alt="" className="h-16 w-16" />
         <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-blurple">Concord</p>
-        <h1 className="mt-2 text-2xl font-semibold text-ink">Salas online</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-ink">Seu perfil</h1>
         <div className="mt-3">
           <DownloadApkButton />
         </div>
@@ -218,53 +219,10 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
         <div className="mt-4">
           <ProfileFields profile={{ ...profile, displayName }} onChange={setProfile} />
         </div>
-
-        <div className="mt-4 space-y-2">
-          {(rooms.length > 0 ? rooms : [
-            { roomId: 'geral', label: 'Sala geral', members: [], activity: { screens: [], cameras: 0 } },
-            { roomId: 'jogatina', label: 'Jogatina', members: [], activity: { screens: [], cameras: 0 } },
-            { roomId: 'afk', label: 'AFK', members: [], activity: { screens: [], cameras: 0 } }
-          ]).map((room) => {
-            const live = room.activity.screens[0]?.sourceName
-            return (
-              <button
-                key={room.roomId}
-                type="button"
-                onClick={() => enter(room.roomId, false)}
-                className="flex w-full items-center gap-3 rounded-xl bg-app px-3 py-2.5 text-left ring-1 ring-white/10 transition-all hover:bg-white/[0.06] active:scale-[0.99]"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-sm font-semibold text-ink">{room.label}</span>
-                    <span className="text-xs text-muted">{room.members.length}</span>
-                  </span>
-                  <span className="mt-1 flex items-center">
-                    {room.members.slice(0, 5).map((member, index) => (
-                      <span key={member.peerId} className={index === 0 ? '' : '-ml-2'} title={member.name}>
-                        <Avatar name={member.name} src={member.avatar} accent={member.accentColor} speaking={member.isSpeaking} size="xs" />
-                      </span>
-                    ))}
-                    {room.members.length === 0 ? <span className="text-xs text-muted">Ninguém por aqui</span> : null}
-                  </span>
-                  {live || room.activity.cameras > 0 ? (
-                    <span className="mt-1 flex flex-wrap gap-1">
-                      {live ? <span className="rounded bg-live/15 px-1.5 py-0.5 text-[10px] font-bold text-live">AO VIVO · {live}</span> : null}
-                      {room.activity.cameras > 0 ? (
-                        <span className="rounded bg-blurple/20 px-1.5 py-0.5 text-[10px] font-bold text-blurple">
-                          {room.activity.cameras} {room.activity.cameras === 1 ? 'câmera' : 'câmeras'}
-                        </span>
-                      ) : null}
-                    </span>
-                  ) : null}
-                </span>
-              </button>
-            )
-          })}
-        </div>
         <button
           type="button"
           onClick={() => setCustomOpen((open) => !open)}
-          className="mt-3 text-sm font-semibold text-blurple hover:underline"
+          className="mt-4 text-sm font-semibold text-blurple hover:underline"
         >
           + Criar / Entrar em outra sala
         </button>
@@ -289,7 +247,6 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
             </label>
           </div>
         ) : null}
-
         <label className="mt-4 flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
@@ -303,7 +260,6 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
           />
           Entrar automaticamente na sala ao iniciar
         </label>
-
         <details className="mt-4 rounded-lg bg-app ring-1 ring-line">
           <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-3 text-sm text-muted">
             Avançado: Servidor & TURN
@@ -355,21 +311,79 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
             />
           </div>
         </details>
-
         {error ? (
           <p className="mt-4 rounded-lg bg-danger/15 px-3 py-2 text-sm text-danger" role="alert">
             {error}
           </p>
         ) : null}
-
         {customOpen ? (
-          <button
-            type="submit"
-            className="mt-6 h-11 w-full rounded-lg bg-blurple text-sm font-semibold text-white hover:bg-[#4752c4]"
-          >
+          <button type="submit" className="mt-6 h-11 w-full rounded-lg bg-blurple text-sm font-semibold text-white hover:bg-[#4752c4]">
             Entrar
           </button>
         ) : null}
+        </section>
+
+        <section className="md:col-span-7">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-bold text-ink">Salas Online</h2>
+            <span className="inline-flex items-center gap-2 text-sm text-muted">
+              <span className="h-2 w-2 rounded-full bg-live" aria-hidden="true" />
+              Ao vivo
+            </span>
+          </div>
+          <div className="space-y-3">
+          {(rooms.length > 0 ? rooms : [
+            { roomId: 'geral', label: 'Sala geral', members: [], activity: { screens: [], cameras: 0 } },
+            { roomId: 'jogatina', label: 'Jogatina', members: [], activity: { screens: [], cameras: 0 } },
+            { roomId: 'afk', label: 'AFK', members: [], activity: { screens: [], cameras: 0 } }
+          ]).map((room) => {
+            const live = room.activity.screens.map((screen) => screen.sourceName).filter(Boolean)
+            const occupied = room.members.length > 0
+            return (
+              <div
+                key={room.roomId}
+                className={`flex items-center gap-4 rounded-2xl p-4 ${occupied ? 'border border-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10' : 'border border-white/10 bg-elevated'}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-base font-semibold text-ink">{room.label}</span>
+                    <span className="text-sm text-muted">{room.members.length}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {room.members.map((member) => (
+                      <span key={member.peerId} className="inline-flex items-center gap-2 rounded-full bg-black/30 py-1 pl-1 pr-3">
+                        <Avatar name={member.name} src={member.avatar} accent={member.accentColor} speaking={member.isSpeaking} size="sm" />
+                        <span className="max-w-32 truncate text-sm font-medium text-ink">{member.name}</span>
+                      </span>
+                    ))}
+                    {room.members.length === 0 ? <span className="text-sm text-muted">Ninguém por aqui</span> : null}
+                  </div>
+                  {live.length > 0 || room.activity.cameras > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {live.map((name) => (
+                        <span key={name} className="rounded-md bg-live/15 px-2 py-1 text-xs font-bold text-live">
+                          AO VIVO · {name}
+                        </span>
+                      ))}
+                      {room.activity.cameras > 0 ? (
+                        <span className="rounded-md bg-blurple/20 px-2 py-1 text-xs font-bold text-blurple">Câmera ligada</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => enter(room.roomId, false)}
+                  className="shrink-0 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-zinc-100"
+                >
+                  Entrar →
+                </button>
+              </div>
+            )
+          })}
+          </div>
+        </section>
+
       </form>
     </main>
   )

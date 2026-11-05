@@ -8,6 +8,7 @@ import {
   type Feature,
   isStreamId,
   isStreamMeta,
+  PREVIEW_IMAGE_MAX,
   sanitizeProfile,
   type PeerInfo,
   type PublicProfile,
@@ -246,6 +247,20 @@ export class RoomHub {
       profile: member.profile
     })
     this.touchDirectory()
+  }
+
+  relayPreview(socket: WebSocket, streamId: unknown, image: unknown, to: unknown): void {
+    const member = this.require(socket)
+    if (!member) return
+    if (!isStreamId(streamId) || !streamId.endsWith(':screen')) return
+    if (typeof image !== 'string' || !image.startsWith('data:image/webp;base64,') || image.length > PREVIEW_IMAGE_MAX) return
+    const message: ServerMessage = { type: 'stream-preview', peerId: member.peerId, streamId, image }
+    if (typeof to === 'string' && to.length > 0 && to.length <= 80) {
+      const target = this.rooms.get(member.roomId)?.get(to)
+      if (target) this.send(target.socket, message)
+      return
+    }
+    this.broadcast(member.roomId, message, member.peerId)
   }
 
   signal(socket: WebSocket, to: string, payload: unknown): void {

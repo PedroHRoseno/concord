@@ -13,6 +13,8 @@ export class SignalingClient {
   onClose: () => void = () => {}
   onMessage: (message: ServerMessage) => void = () => {}
   onStatus: (status: SocketStatus) => void = () => {}
+  onLatency: (ms: number | null) => void = () => {}
+  private pingSentAt = 0
 
   constructor(private readonly url: string) {}
 
@@ -60,7 +62,12 @@ export class SignalingClient {
     ws.onmessage = (event) => {
       if (typeof event.data !== 'string') return
       try {
-        this.onMessage(JSON.parse(event.data) as ServerMessage)
+        const message = JSON.parse(event.data) as ServerMessage
+        if (message.type === 'pong' && this.pingSentAt > 0) {
+          this.onLatency(Math.max(0, Date.now() - this.pingSentAt))
+          this.pingSentAt = 0
+        }
+        this.onMessage(message)
       } catch {
         console.warn('Mensagem de sinalização ignorada.')
       }
@@ -76,6 +83,7 @@ export class SignalingClient {
       this.onClose()
       if (this.stopped) {
         this.onStatus('disconnected')
+        this.onLatency(null)
         return
       }
       this.scheduleRetry()
@@ -84,9 +92,12 @@ export class SignalingClient {
 
   private startHeartbeat(): void {
     this.clearHeartbeat()
-    this.heartbeat = window.setInterval(() => {
+    const beat = (): void => {
+      this.pingSentAt = Date.now()
       this.send({ type: 'ping' })
-    }, 25_000)
+    }
+    beat()
+    this.heartbeat = window.setInterval(beat, 25_000)
   }
 
   private clearHeartbeat(): void {
@@ -99,6 +110,7 @@ export class SignalingClient {
   private scheduleRetry(): void {
     const delay = Math.min(8000, 500 * 2 ** this.attempt)
     this.attempt += 1
+    this.onLatency(null)
     this.onStatus('reconnecting')
     this.timer = window.setTimeout(() => {
       this.timer = null

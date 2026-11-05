@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Bell, Info, Keyboard, Mic, MonitorUp, UserRound, X } from 'lucide-react'
+import { Bell, Info, Keyboard, Mic, MonitorUp, Scaling, UserRound, X } from 'lucide-react'
 import { DownloadApkButton } from '@renderer/components/ApkRelease'
 import { Avatar } from '@renderer/components/Avatar'
 import { ProfileFields } from '@renderer/components/ProfileFields'
@@ -14,7 +14,7 @@ import { attachLocalMeter, detachLocalMeter, listInputDevices, readInputDeviceId
 import { previewSound, readSoundPrefs, writeSoundEnabled, writeSoundVolume, type SoundPreview } from '@renderer/utils/soundEffects'
 import { RESOLUTION_OPTIONS, VIDEO_BITRATES, type ResolutionPreset, type UserProfile } from '@renderer/types'
 
-export type SettingsSection = 'profile' | 'voice' | 'video' | 'sounds' | 'hotkeys' | 'about'
+export type SettingsSection = 'profile' | 'voice' | 'video' | 'sounds' | 'hotkeys' | 'appearance' | 'about'
 
 interface SettingsSheetProps {
   initialSection: SettingsSection
@@ -38,6 +38,37 @@ function acceleratorFrom(event: KeyboardEvent): string | null {
   if (parts.length === 0) return null
   parts.push(key.length === 1 ? key.toUpperCase() : key)
   return parts.join('+')
+}
+
+function AppearancePanel() {
+  const [zoom, setZoom] = useState(() => window.electronAPI?.getZoomFactor?.() ?? 1)
+  const steps = [0.9, 1, 1.15, 1.25, 1.5]
+  if (!window.electronAPI?.setZoomFactor) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-ink">Aparência</h2>
+        <p className="mt-3 text-sm text-muted">A escala da interface fica disponível no aplicativo de desktop.</p>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <h2 className="text-xl font-semibold text-ink">Aparência</h2>
+      <p className="mt-2 text-sm text-muted">Escala da interface (zoom). Atalhos: Ctrl + =, Ctrl + - e Ctrl + 0.</p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        {steps.map((step) => (
+          <button
+            key={step}
+            type="button"
+            onClick={() => setZoom(window.electronAPI?.setZoomFactor?.(step) ?? step)}
+            className={`h-10 rounded-lg px-4 text-sm font-medium ${Math.abs(zoom - step) < 0.01 ? 'bg-blurple text-white' : 'bg-white/10 text-ink hover:bg-white/15'}`}
+          >
+            {Math.round(step * 100)}%
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function ProfilePanel({ profile, onSave }: { profile: UserProfile; onSave: (profile: UserProfile) => void }) {
@@ -693,6 +724,7 @@ export function SettingsSheet({ initialSection, profile, voiceLive, onApplyVoice
     { id: 'voice', label: 'Voz e áudio', icon: Mic },
     { id: 'video', label: 'Transmissão e vídeo', icon: MonitorUp },
     { id: 'sounds', label: 'Sons e notificações', icon: Bell },
+    { id: 'appearance', label: 'Aparência', icon: Scaling },
     ...(hotkeys ? [{ id: 'hotkeys' as const, label: 'Atalhos de teclado', icon: Keyboard }] : []),
     { id: 'about', label: 'Sobre e atualizações', icon: Info }
   ]
@@ -750,6 +782,7 @@ export function SettingsSheet({ initialSection, profile, voiceLive, onApplyVoice
             {section === 'voice' ? <VoicePanel voiceLive={voiceLive} onApplyVoice={onApplyVoice} /> : null}
             {section === 'video' ? <VideoPanel /> : null}
             {section === 'sounds' ? <SoundsPanel /> : null}
+            {section === 'appearance' ? <AppearancePanel /> : null}
             {section === 'hotkeys' ? <HotkeyPanel /> : null}
             {section === 'about' ? <AboutPanel /> : null}
           </div>

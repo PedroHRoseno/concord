@@ -12,6 +12,46 @@ let blockerId: number | null = null
 
 const emptyThumbnail = { width: 0, height: 0 }
 
+function hwndOf(sourceId: string): number | null {
+  const match = /^window:(\d+):/.exec(sourceId)
+  if (!match) return null
+  const hwnd = Number(match[1])
+  return Number.isInteger(hwnd) && hwnd > 0 ? hwnd : null
+}
+
+function runPowerShell(script: string): Promise<string> {
+  if (process.platform !== 'win32') return Promise.resolve('')
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      { windowsHide: true, timeout: 8000, encoding: 'utf8' },
+      (error, stdout) => resolve(error ? '' : stdout)
+    )
+  })
+}
+
+const WIN32_TYPE =
+  'Add-Type -TypeDefinition \'using System; using System.Runtime.InteropServices; public class ConcordWin { [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow); }\';'
+
+async function iconicSet(hwnds: number[]): Promise<Set<number>> {
+  const unique = [...new Set(hwnds.filter((hwnd) => hwnd > 0))]
+  if (unique.length === 0) return new Set()
+  const script = `${WIN32_TYPE} @(${unique.join(',')}) | Where-Object { [ConcordWin]::IsIconic([IntPtr]$_) }`
+  const stdout = await runPowerShell(script)
+  const found = new Set<number>()
+  for (const line of stdout.split(/\s+/)) {
+    const hwnd = Number(line)
+    if (Number.isInteger(hwnd) && hwnd > 0) found.add(hwnd)
+  }
+  return found
+}
+
+async function restoreWindow(hwnd: number): Promise<void> {
+  if (process.platform !== 'win32' || hwnd <= 0) return
+  await runPowerShell(`${WIN32_TYPE} [ConcordWin]::ShowWindow([IntPtr]${hwnd}, 9) | Out-Null`)
+}
+
 /**
  * Permissões que o app concede ao próprio renderer.
  * `fullscreen` é essencial: se for negada, `requestFullscreen()` nunca resolve nem rejeita (a Promise fica pendente).
@@ -32,6 +72,7 @@ const IGNORED_PROCESSES = new Set(['textinputhost', 'applicationframehost', 'sys
 interface HiddenWindow {
   process: string
   title: string
+  hwnd: number
 }
 
 /**
@@ -58,7 +99,7 @@ function listHiddenWindows(knownIds: Set<string>): Promise<HiddenWindow[]> {
           rows
             .filter((row) => !knownIds.has(`window:${row.h}:0`))
             .filter((row) => !IGNORED_PROCESSES.has(row.p.toLowerCase()) && row.p.toLowerCase() !== own && row.p.toLowerCase() !== 'concord')
-            .map((row) => ({ process: row.p, title: row.t }))
+            .map((row) => ({ process: row.p, title: row.t, hwnd: row.h }))
         )
       } catch {
         resolve([])
@@ -115,13 +156,27 @@ export function registerCapture(): void {
       thumbnailSize: { width: 400, height: 225 },
       fetchWindowIcons: true
     })
-    return sources.map((source) => ({
-      id: source.id,
-      name: source.name,
-      thumbnail: source.thumbnail.isEmpty() ? '' : source.thumbnail.toDataURL(),
-      appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
-      displayId: source.display_id
-    }))
+    const visible = sources.filter((source) => source.id.startsWith('screen:') || source.name.trim().length > 0)
+    const iconic = await iconicSet(visible.map((source) => hwndOf(source.id) ?? 0))
+    const hidden = await listHiddenWindows(new Set(sources.map((source) => source.id)))
+    return [
+      ...visible.map((source) => ({
+        id: source.id,
+        name: source.name,
+        thumbnail: source.thumbnail.isEmpty() ? '' : source.thumbnail.toDataURL(),
+        appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
+        displayId: source.display_id,
+        minimized: iconic.has(hwndOf(source.id) ?? 0)
+      })),
+      ...hidden.map((row) => ({
+        id: `window:${row.hwnd}:0`,
+        name: row.title,
+        thumbnail: '',
+        appIcon: null,
+        displayId: '',
+        minimized: true
+      }))
+    ]
   })
 
   /** Assinatura leve (sem miniaturas) para detectar janelas abertas/fechadas sem custo de captura. */
@@ -135,10 +190,22 @@ export function registerCapture(): void {
     return listHiddenWindows(new Set(sources.map((source) => source.id)))
   })
 
-  ipcMain.handle('capture:prepare', (event, options: PendingCapture) => {
+  ipcMain.handle('capture:prepare', async (event, options: PendingCapture) => {
     if (!options || typeof options.sourceId !== 'string') return false
+    let sourceId = options.sourceId
+    const hwnd = hwndOf(sourceId)
+    if (hwnd) {
+      await restoreWindow(hwnd)
+      let found = await findSource(sourceId)
+      if (!found) {
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        found = await findSource(sourceId)
+      }
+      if (found) sourceId = found.id
+      else if (sourceId.startsWith('window:')) return false
+    }
     pendingByContents.set(event.sender.id, {
-      sourceId: options.sourceId,
+      sourceId,
       shareAudio: Boolean(options.shareAudio),
       loopbackWithScreen: Boolean(options.loopbackWithScreen)
     })

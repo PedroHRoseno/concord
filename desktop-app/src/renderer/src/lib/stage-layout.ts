@@ -10,22 +10,32 @@ export interface TileBox {
 
 export function equalGrid(count: number, width: number, height: number): TileBox[] {
   if (count <= 0 || width < 1 || height < 1) return []
-  const cols = Math.ceil(Math.sqrt(count))
+  const cols = count <= 1 ? 1 : count === 2 ? 2 : count <= 4 ? 2 : Math.ceil(Math.sqrt(count))
   const rows = Math.ceil(count / cols)
-  const innerW = width - PAD * 2 - GAP * Math.max(0, cols - 1)
-  const innerH = height - PAD * 2 - GAP * Math.max(0, rows - 1)
-  const w = Math.max(1, Math.floor(innerW / cols))
-  const h = Math.max(1, Math.floor(innerH / rows))
+  const availW = width - PAD * 2 - GAP * Math.max(0, cols - 1)
+  const availH = height - PAD * 2 - GAP * Math.max(0, rows - 1)
+  let cellW = availW / cols
+  let cellH = cellW * 9 / 16
+  if (cellH * rows > availH) {
+    cellH = availH / rows
+    cellW = cellH * 16 / 9
+  }
+  const w = Math.max(1, Math.floor(cellW))
+  const h = Math.max(1, Math.floor(cellH))
+  const gridW = cols * w + Math.max(0, cols - 1) * GAP
+  const gridH = rows * h + Math.max(0, rows - 1) * GAP
+  const originX = Math.max(PAD, Math.floor((width - gridW) / 2))
+  const originY = Math.max(PAD, Math.floor((height - gridH) / 2))
   const boxes: TileBox[] = []
   for (let index = 0; index < count; index += 1) {
     const col = index % cols
     const row = Math.floor(index / cols)
     const inRow = row === rows - 1 ? count - row * cols : cols
     const rowWidth = inRow * w + Math.max(0, inRow - 1) * GAP
-    const offsetX = PAD + Math.max(0, Math.floor((width - PAD * 2 - rowWidth) / 2))
+    const rowX = originX + Math.max(0, Math.floor((gridW - rowWidth) / 2))
     boxes.push({
-      x: offsetX + col * (w + GAP),
-      y: PAD + row * (h + GAP),
+      x: rowX + col * (w + GAP),
+      y: originY + row * (h + GAP),
       w,
       h
     })
