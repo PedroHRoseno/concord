@@ -92,6 +92,9 @@ function linkKey(streamId: string, viewerId: string): string {
   return `${streamId}>${viewerId}`
 }
 
+/** O cartão borrado da grade só precisa de um retrato ocasional. */
+const PREVIEW_REFRESH_MS = 5 * 60 * 1000
+
 function groupWatchers(
   rows: Array<{ streamId: string; peerId: string; displayName: string }>
 ): Map<string, WatcherInfo[]> {
@@ -1301,7 +1304,7 @@ export class MeshSession {
       void this.capturePreview(streamId)
     }
     window.setTimeout(tick, 500)
-    this.previewTimer = window.setInterval(tick, 2000)
+    this.previewTimer = window.setInterval(tick, PREVIEW_REFRESH_MS)
   }
 
   private stopPreviewLoop(): void {
