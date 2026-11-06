@@ -1,0 +1,26 @@
+---
+description: Ciclo do quadro Concord no GitHub Projects, disparado no chat
+alwaysApply: true
+---
+
+# Quadro
+
+O quadro é https://github.com/users/PedroHRoseno/projects/1 (projeto 1 de PedroHRoseno, id `PVT_kwHOBB3Zic4Bqb9Q`). Colunas: Backlog, Todo, In Progress, Done. Done é pull request aberto. Não faça merge, tag nem release. Não pegue um segundo card no mesmo pedido.
+
+Card novo entra em Todo, que é o padrão do GitHub neste quadro. O que ainda não deve ser pego vai para Backlog. O agente só tira de Todo.
+
+Disparo: "pega o próximo do Todo", "próximo card" ou "implementa o card #N".
+
+Campo Status `PVTSSF_lAHOBB3Zic4Bqb9QzhozGHI`. Opções: Backlog `0717ae18`, Todo `f75ad846`, In Progress `47fc9ee4`, Done `98236657`. Repositório `R_kgDOVcnMqw`.
+
+1. Liste com `gh project item-list 1 --owner PedroHRoseno --format json --limit 100`. Sem Todo, pare. Sem `#N`, pegue o primeiro Todo da lista.
+2. Mova para In Progress antes de editar. Issue: `gh project item-edit 1 --owner PedroHRoseno --url URL --field Status --value "In Progress"`. Rascunho: converta com `convertProjectV2DraftIssueItemToIssue` (`itemId` do item, `repositoryId` acima) e use a issue criada.
+3. Árvore limpa. Atualize `main` e crie `issue-<número>-<slug>`. Push só dessa branch.
+4. O título é o pedido. Se dois desenhos mudarem a arquitetura, pergunte e deixe o card em In Progress.
+5. Implemente nas regras já existentes. Antes de commit e push, rode na raiz o que o card tocou. Falha: não commit, não push, não abra PR; o card fica em In Progress.
+   - `signaling-server/`: `npm run typecheck -w signaling-server` e `npm run build -w signaling-server`
+   - `desktop-app/`: `npm run typecheck -w desktop-app` e `npm run build -w desktop-app`
+   - `desktop-app/src/renderer/` ou `mobile/`: também `npm run build:mobile`
+   - Só regra, template ou workflow: não rode build.
+6. Esse pedido autoriza o commit (português, o porquê) e o push da branch. PR com a interpretação, o que mudou, como testar e `Closes #<número>`.
+7. Com a URL do PR, `--value "Done"`. Se a implementação falhar, o card fica em In Progress.
