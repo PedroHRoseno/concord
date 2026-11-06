@@ -2,6 +2,12 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [1.8.2] - 2026-11-06
+
+### Melhorado
+
+- O fundo borrado da grade passa a atualizar a cada 5 minutos. O primeiro quadro continua saindo assim que a tela começa.
+
 ## [1.8.1] - 2026-11-05
 
 ### Adicionado
