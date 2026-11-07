@@ -196,6 +196,22 @@ export function Room({ room }: { room: RoomController }) {
       onSend={room.sendChat}
     />
   ) : null
+  const music = room.self ? (
+    <MusicDeck
+      state={room.music}
+      selfId={room.self.peerId}
+      busy={room.musicBusy}
+      blocked={room.musicBlocked}
+      volume={room.musicVolume}
+      muted={room.musicMuted}
+      onAdd={(url) => void room.addMusic(url)}
+      onVote={room.voteSkip}
+      onForce={room.forceSkip}
+      onVolume={room.setMusicVolume}
+      onToggleMute={room.toggleMusicMuted}
+      onResume={room.resumeMusic}
+    />
+  ) : null
 
   function confirm(settings: CaptureSettings): void {
     setPicker(null)
@@ -381,22 +397,6 @@ export function Room({ room }: { room: RoomController }) {
                 canShare={canShareScreen()}
               />
             </div>
-            {room.self ? (
-              <MusicDeck
-                state={room.music}
-                selfId={room.self.peerId}
-                busy={room.musicBusy}
-                blocked={room.musicBlocked}
-                volume={room.musicVolume}
-                muted={room.musicMuted}
-                onAdd={(url) => void room.addMusic(url)}
-                onVote={room.voteSkip}
-                onForce={room.forceSkip}
-                onVolume={room.setMusicVolume}
-                onToggleMute={room.toggleMusicMuted}
-                onResume={room.resumeMusic}
-              />
-            ) : null}
           </div>
           <div
             className={`room-chrome transition-opacity duration-300 ${dockVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
@@ -443,6 +443,7 @@ export function Room({ room }: { room: RoomController }) {
                   onTab={setSideTab}
                   unread={unreadChat}
                   chat={chat}
+                  music={music}
                   booting={settling}
                 />
               </div>
@@ -464,6 +465,7 @@ export function Room({ room }: { room: RoomController }) {
             onTab={setSideTab}
             unread={unreadChat}
             chat={chat}
+            music={music}
             booting={settling}
           />
           </div>

@@ -45,67 +45,71 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
   }
 
   const card = (
-    <section className="pointer-events-auto relative w-full max-w-xl rounded-2xl bg-panel/95 p-3 shadow-2xl ring-1 ring-white/10">
+    <section aria-label="Jukebox" className="relative w-full shrink-0 border-b border-line px-3 py-3">
       {blocked && current ? (
-        <SyncOverlay onResume={onResume} className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-blurple px-4 text-center text-sm font-semibold text-white shadow-2xl" />
+        <SyncOverlay onResume={onResume} className="absolute inset-0 z-10 flex items-center justify-center bg-blurple px-3 text-center text-xs font-semibold leading-snug text-white" />
       ) : null}
-      <div className="flex flex-wrap items-center gap-3" inert={blocked && current ? true : undefined}>
-      {current?.artwork ? (
-        <img src={current.artwork} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
-      ) : (
-        <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-white/5 text-muted">
-          <Music className="h-6 w-6" aria-hidden="true" />
-        </span>
-      )}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-ink">{current ? current.title : 'Nenhuma música na fila'}</p>
-        <p className="truncate text-xs text-muted">
-          {current ? `${current.artist || 'YouTube'} · ${current.addedByName}` : 'Cole um link do YouTube ou do Spotify'}
-        </p>
-        {current ? (
-          <span className="mt-1 flex h-3 items-end gap-0.5" aria-hidden="true">
-            {[0, 1, 2, 3].map((bar) => (
-              <span
-                key={bar}
-                className="w-0.5 animate-pulse rounded-full bg-blurple"
-                style={{ height: `${8 + ((bar * 3) % 5)}px`, animationDelay: `${bar * 120}ms` }}
-              />
-            ))}
-          </span>
-        ) : null}
-      </div>
-      {current ? (
-        <button
-          type="button"
-          onClick={owner ? onForce : onVote}
-          disabled={!owner && voted}
-          className="inline-flex h-10 items-center gap-1 rounded-xl bg-white/10 px-3 text-xs font-semibold text-ink hover:bg-white/15 disabled:opacity-50"
-        >
-          <SkipForward className="h-4 w-4" aria-hidden="true" />
-          {owner ? 'Pular' : voted ? 'Voto enviado' : `Pular ${votes.length}/${needed}`}
-        </button>
-      ) : null}
-      <button type="button" onClick={onToggleMute} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-ink hover:bg-white/10" aria-label={muted ? 'Ativar música' : 'Mutar música'}>
-        {muted || volume === 0 ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
-      </button>
-      <input
-        id="music-volume"
-        aria-label="Volume da música"
-        type="range"
-        min={0}
-        max={100}
-        value={Math.round(volume * 100)}
-        onChange={(event) => onVolume(Number(event.target.value) / 100)}
-        className="w-20 accent-blurple"
-      />
-      <button
-        type="button"
-        onClick={() => setQueueOpen(true)}
-        className="inline-flex h-10 items-center gap-1 rounded-xl bg-white/10 px-3 text-xs font-semibold text-ink hover:bg-white/15"
-      >
-        <ListMusic className="h-4 w-4" aria-hidden="true" />
-        Fila{queue.length > 0 ? ` ${queue.length}` : ''}
-      </button>
+      <div inert={blocked && current ? true : undefined}>
+        <div className="flex items-start gap-2">
+          {current?.artwork ? (
+            <img src={current.artwork} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+          ) : (
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/5 text-muted">
+              <Music className="h-5 w-5" aria-hidden="true" />
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-ink">{current ? current.title : 'Nenhuma música na fila'}</p>
+            <p className="truncate text-xs text-muted">
+              {current ? `${current.artist || 'YouTube'} · ${current.addedByName}` : 'Cole um link do YouTube ou do Spotify'}
+            </p>
+            {current ? (
+              <span className="mt-1 flex h-3 items-end gap-0.5" aria-hidden="true">
+                {[0, 1, 2, 3].map((bar) => (
+                  <span
+                    key={bar}
+                    className="w-0.5 animate-pulse rounded-full bg-blurple"
+                    style={{ height: `${8 + ((bar * 3) % 5)}px`, animationDelay: `${bar * 120}ms` }}
+                  />
+                ))}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {current ? (
+            <button
+              type="button"
+              onClick={owner ? onForce : onVote}
+              disabled={!owner && voted}
+              className="inline-flex h-9 min-w-0 items-center gap-1 rounded-lg bg-white/10 px-2.5 text-xs font-semibold text-ink hover:bg-white/15 disabled:opacity-50"
+            >
+              <SkipForward className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{owner ? 'Pular' : voted ? 'Voto enviado' : `Pular ${votes.length}/${needed}`}</span>
+            </button>
+          ) : null}
+          <button type="button" onClick={onToggleMute} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink hover:bg-white/10" aria-label={muted ? 'Ativar música' : 'Mutar música'}>
+            {muted || volume === 0 ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
+          </button>
+          <input
+            id="music-volume"
+            aria-label="Volume da música"
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(volume * 100)}
+            onChange={(event) => onVolume(Number(event.target.value) / 100)}
+            className="h-9 min-w-16 flex-1 basis-16 accent-blurple"
+          />
+          <button
+            type="button"
+            onClick={() => setQueueOpen(true)}
+            className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg bg-white/10 px-2.5 text-xs font-semibold text-ink hover:bg-white/15"
+          >
+            <ListMusic className="h-3.5 w-3.5" aria-hidden="true" />
+            Fila{queue.length > 0 ? ` ${queue.length}` : ''}
+          </button>
+        </div>
       </div>
     </section>
   )
@@ -162,7 +166,7 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
 
   return (
     <>
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center px-4">{card}</div>
+      {card}
       {queueModal}
     </>
   )

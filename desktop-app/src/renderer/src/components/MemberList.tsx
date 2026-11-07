@@ -29,6 +29,7 @@ interface MemberListProps {
   onTab: (tab: 'room' | 'chat') => void
   unread: number
   chat: ReactNode
+  music?: ReactNode
   sheet?: boolean
   booting?: boolean
 }
@@ -100,6 +101,7 @@ export function MemberList({
   onTab,
   unread,
   chat,
+  music = null,
   sheet = false,
   booting = false
 }: MemberListProps) {
@@ -214,6 +216,7 @@ export function MemberList({
           </button>
         ))}
       </div>
+      {tab === 'room' ? music : null}
       {booting && tab === 'room' ? (
         <div className="space-y-2 px-3 py-2">
           {Array.from({ length: 4 }, (_, index) => (
