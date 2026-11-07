@@ -8,8 +8,11 @@ import {
   type Feature,
   isStreamId,
   isStreamMeta,
+  parseMusicRequest,
   PREVIEW_IMAGE_MAX,
   sanitizeProfile,
+  type MusicState,
+  type MusicTrack,
   type PeerInfo,
   type PublicProfile,
   type ServerMessage,
@@ -32,6 +35,7 @@ export interface Member {
   chatTimes: number[]
   speaking: boolean
   muted: boolean
+  musicTimes: number[]
 }
 
 const PINNED_ROOMS: Array<{ roomId: string; label: string }> = [
@@ -47,8 +51,23 @@ const HISTORY_IMAGE_BYTES = 600_000
 const CHAT_WINDOW_MS = 3000
 const CHAT_BURST = 5
 
+const QUEUE_LIMIT = 40
+const MUSIC_WINDOW_MS = 10_000
+const MUSIC_BURST = 5
+
+interface RoomMusic {
+  current: MusicTrack | null
+  queue: MusicTrack[]
+  votes: Set<string>
+}
+
 const isVoiceId = (streamId: string): boolean => streamId.endsWith(':voice')
-const hasVoice = (member: Member): boolean => member.features.has('voice')
+
+function streamGate(streamId: string): Feature | null {
+  if (streamId.endsWith(':voice')) return 'voice'
+  if (streamId.endsWith(':music')) return 'music'
+  return null
+}
 
 const ROOM_RE = /^[A-Za-z0-9_-]{1,64}$/
 const PEER_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -60,6 +79,7 @@ export class RoomHub {
   private unlisted = new Map<string, boolean>()
   private directoryWatchers = new Set<WebSocket>()
   private directoryTimer: ReturnType<typeof setTimeout> | null = null
+  private music = new Map<string, RoomMusic>()
 
   roomCount(): number {
     return this.rooms.size
@@ -104,8 +124,7 @@ export class RoomHub {
     }
 
     const feats = parseFeatures(features)
-    const voiceOk = feats.has('voice')
-    const peers = [...room.values()].map((member) => this.toInfo(room, member, voiceOk))
+    const peers = [...room.values()].map((other) => this.toInfo(room, other, feats))
     const member: Member = {
       socket,
       peerId,
@@ -118,18 +137,20 @@ export class RoomHub {
       features: feats,
       chatTimes: [],
       speaking: false,
-      muted: false
+      muted: false,
+      musicTimes: []
     }
     room.set(peerId, member)
     this.bySocket.set(socket, member)
     this.send(socket, { type: 'joined', peerId, peers })
     this.broadcastWith(roomId, peerId, (other) => ({
       type: 'peer-joined',
-      peer: this.toInfo(room, member, hasVoice(other))
+      peer: this.toInfo(room, member, other.features)
     }))
     if (feats.has('chat')) {
       this.send(socket, { type: 'chat-history', messages: this.history.get(roomId) ?? [] })
     }
+    if (feats.has('music')) this.send(socket, { type: 'music', state: this.publicMusic(roomId) })
     console.log(`[${roomId}] ${name} entrou (${room.size})`)
     this.touchDirectory()
     return { ok: true }
@@ -160,10 +181,12 @@ export class RoomHub {
     room.delete(member.peerId)
     this.broadcast(member.roomId, { type: 'peer-left', peerId: member.peerId })
     console.log(`[${member.roomId}] ${member.displayName} saiu (${room.size})`)
+    this.noteMusicLeave(member)
     if (room.size === 0) {
       this.rooms.delete(member.roomId)
       this.history.delete(member.roomId)
       this.unlisted.delete(member.roomId)
+      this.music.delete(member.roomId)
     }
     this.touchDirectory()
   }
@@ -227,7 +250,7 @@ export class RoomHub {
     }
     member.streams.set(streamId, meta)
     if (!member.watchers.has(streamId)) member.watchers.set(streamId, new Set())
-    this.broadcast(member.roomId, { type: 'stream-meta', peerId: member.peerId, streamId, meta }, undefined, isVoiceId(streamId))
+    this.broadcast(member.roomId, { type: 'stream-meta', peerId: member.peerId, streamId, meta }, undefined, streamGate(streamId))
     console.log(`[${member.roomId}] ${member.displayName} transmitindo ${meta.streamType}`)
     this.touchDirectory()
   }
@@ -302,7 +325,7 @@ export class RoomHub {
           watcher: { peerId: member.peerId, displayName: member.displayName }
         },
         undefined,
-        isVoiceId(streamId)
+        streamGate(streamId)
       )
       this.send(owner.socket, { type: 'watch', streamId, viewerId: member.peerId })
       return
@@ -317,7 +340,7 @@ export class RoomHub {
         peerId: member.peerId
       },
       undefined,
-      isVoiceId(streamId)
+      streamGate(streamId)
     )
     this.send(owner.socket, { type: 'unwatch', streamId, viewerId: member.peerId })
   }
@@ -344,7 +367,7 @@ export class RoomHub {
         meta: null
       },
       undefined,
-      isVoiceId(streamId)
+      streamGate(streamId)
     )
     console.log(`[${member.roomId}] ${member.displayName} parou ${streamId}`)
     this.touchDirectory()
@@ -363,7 +386,7 @@ export class RoomHub {
             peerId
           },
           undefined,
-          isVoiceId(streamId)
+          streamGate(streamId)
         )
       }
     }
@@ -376,10 +399,138 @@ export class RoomHub {
     return undefined
   }
 
-  private toInfo(room: Map<string, Member>, member: Member, viewerHasVoice: boolean): PeerInfo {
+  addMusic(socket: WebSocket, payload: Record<string, unknown>): void {
+    const member = this.require(socket)
+    if (!member) return
+    if (!member.features.has('music')) return
+    const now = Date.now()
+    member.musicTimes = member.musicTimes.filter((at) => now - at < MUSIC_WINDOW_MS)
+    if (member.musicTimes.length >= MUSIC_BURST) {
+      this.send(socket, { type: 'error', message: 'Você está adicionando músicas rápido demais.' })
+      return
+    }
+    const parsed = parseMusicRequest(payload)
+    if (!parsed.ok) {
+      this.send(socket, { type: 'error', message: parsed.error })
+      return
+    }
+    const state = this.musicOf(member.roomId)
+    if (state.queue.length >= QUEUE_LIMIT || (state.current && state.queue.length >= QUEUE_LIMIT)) {
+      this.send(socket, { type: 'error', message: 'A fila de música está cheia.' })
+      return
+    }
+    const track: MusicTrack = {
+      id: randomUUID(),
+      sourceUrl: parsed.sourceUrl,
+      provider: parsed.provider,
+      videoId: parsed.videoId,
+      title: parsed.title,
+      artist: parsed.artist,
+      artwork: parsed.artwork,
+      addedBy: member.peerId,
+      addedByName: member.displayName
+    }
+    member.musicTimes.push(now)
+    if (!state.current) state.current = track
+    else state.queue.push(track)
+    this.pushMusic(member.roomId)
+  }
+
+  voteSkip(socket: WebSocket): void {
+    const member = this.require(socket)
+    if (!member || !member.features.has('music')) return
+    const state = this.music.get(member.roomId)
+    if (!state?.current) return
+    if (state.current.addedBy === member.peerId) {
+      this.send(socket, { type: 'error', message: 'Quem adicionou a faixa pula direto.' })
+      return
+    }
+    state.votes.add(member.peerId)
+    if (state.votes.size >= this.needed(member.roomId)) this.advance(member.roomId)
+    else this.pushMusic(member.roomId)
+  }
+
+  forceSkip(socket: WebSocket): void {
+    const member = this.require(socket)
+    if (!member || !member.features.has('music')) return
+    const state = this.music.get(member.roomId)
+    if (!state?.current) return
+    if (state.current.addedBy !== member.peerId) {
+      this.send(socket, { type: 'error', message: 'Só quem adicionou a faixa pode pular direto.' })
+      return
+    }
+    this.advance(member.roomId)
+  }
+
+  musicEnded(socket: WebSocket, trackId: unknown): void {
+    const member = this.require(socket)
+    if (!member || typeof trackId !== 'string') return
+    const state = this.music.get(member.roomId)
+    if (!state?.current || state.current.id !== trackId || state.current.addedBy !== member.peerId) return
+    this.advance(member.roomId)
+  }
+
+  private musicOf(roomId: string): RoomMusic {
+    const existing = this.music.get(roomId)
+    if (existing) return existing
+    const created: RoomMusic = { current: null, queue: [], votes: new Set() }
+    this.music.set(roomId, created)
+    return created
+  }
+
+  private needed(roomId: string): number {
+    return Math.max(1, Math.ceil((this.rooms.get(roomId)?.size ?? 1) * 0.5))
+  }
+
+  private publicMusic(roomId: string): MusicState {
+    const state = this.musicOf(roomId)
+    return {
+      current: state.current,
+      queue: state.queue,
+      votes: [...state.votes],
+      needed: this.needed(roomId)
+    }
+  }
+
+  private pushMusic(roomId: string): void {
+    const room = this.rooms.get(roomId)
+    if (!room) return
+    const message: ServerMessage = { type: 'music', state: this.publicMusic(roomId) }
+    for (const member of room.values()) {
+      if (member.features.has('music')) this.send(member.socket, message)
+    }
+  }
+
+  private advance(roomId: string): void {
+    const state = this.musicOf(roomId)
+    const room = this.rooms.get(roomId)
+    state.votes.clear()
+    let next = state.queue.shift() ?? null
+    while (next && room && !room.has(next.addedBy)) next = state.queue.shift() ?? null
+    state.current = next
+    this.pushMusic(roomId)
+  }
+
+  private noteMusicLeave(member: Member): void {
+    const state = this.music.get(member.roomId)
+    if (!state) return
+    state.votes.delete(member.peerId)
+    state.queue = state.queue.filter((track) => track.addedBy !== member.peerId)
+    if (state.current?.addedBy === member.peerId) {
+      this.advance(member.roomId)
+      return
+    }
+    if (state.current && state.votes.size >= this.needed(member.roomId)) this.advance(member.roomId)
+    else this.pushMusic(member.roomId)
+  }
+
+  private toInfo(room: Map<string, Member>, member: Member, viewerFeatures: Set<Feature>): PeerInfo {
     const watchers: PeerInfo['watchers'] = []
+    const viewerHasVoice = viewerFeatures.has('voice')
+    const viewerHasMusic = viewerFeatures.has('music')
     for (const [streamId, ids] of member.watchers) {
       if (!viewerHasVoice && isVoiceId(streamId)) continue
+      if (!viewerHasMusic && streamId.endsWith(':music')) continue
       for (const peerId of ids) {
         const watcher = room.get(peerId)
         if (!watcher) continue
@@ -391,7 +542,11 @@ export class RoomHub {
       peerId: member.peerId,
       displayName: member.displayName,
       profile: member.profile,
-      streams: [...member.streams.values()].filter((s) => viewerHasVoice || s.streamType !== 'voice'),
+      streams: [...member.streams.values()].filter((stream) => {
+        if (stream.streamType === 'voice') return viewerHasVoice
+        if (stream.streamType === 'music') return viewerHasMusic
+        return true
+      }),
       watchers
     }
   }
@@ -455,12 +610,12 @@ export class RoomHub {
     return member
   }
 
-  private broadcast(roomId: string, message: ServerMessage, exceptPeerId?: string, voiceOnly = false): void {
+  private broadcast(roomId: string, message: ServerMessage, exceptPeerId?: string, gate: Feature | null = null): void {
     const room = this.rooms.get(roomId)
     if (!room) return
     for (const member of room.values()) {
       if (member.peerId === exceptPeerId) continue
-      if (voiceOnly && !hasVoice(member)) continue
+      if (gate && !member.features.has(gate)) continue
       this.send(member.socket, message)
     }
   }

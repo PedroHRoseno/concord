@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { WebSocketServer, type RawData } from 'ws'
 import { RoomHub } from './rooms.js'
+import { allowMusicSearch, searchYoutube } from './music-search.js'
 import { clientIp, unfurl } from './unfurl.js'
 
 const port = Number(process.env.PORT ?? 8080)
@@ -61,6 +62,21 @@ function handleHttp(req: IncomingMessage, res: ServerResponse): void {
   }
   if (req.method === 'GET' && path === '/turn') {
     void fetchTurn().then((body) => writeJson(res, 200, body))
+    return
+  }
+  if (req.method === 'GET' && path === '/music-search') {
+    const query = new URL(req.url ?? '/', 'http://signaling.local').searchParams.get('q') ?? ''
+    const ip = clientIp(req)
+    if (!allowMusicSearch(ip)) {
+      writeJson(res, 429, { error: 'Muitas buscas de música. Espere um instante.' })
+      return
+    }
+    void searchYoutube(query)
+      .then((found) => {
+        if (!found) writeJson(res, 404, { error: 'Nenhuma versão no YouTube.' })
+        else writeJson(res, 200, found)
+      })
+      .catch(() => writeJson(res, 502, { error: 'A busca no YouTube falhou.' }))
     return
   }
   if (req.method === 'GET' && path === '/unfurl') {
@@ -168,6 +184,18 @@ wss.on('connection', (socket) => {
         return
       case 'voice-state':
         hub.voiceState(socket, message.speaking === true, message.muted === true)
+        return
+      case 'add-music':
+        hub.addMusic(socket, message)
+        return
+      case 'vote-skip':
+        hub.voteSkip(socket)
+        return
+      case 'force-skip':
+        hub.forceSkip(socket)
+        return
+      case 'music-ended':
+        hub.musicEnded(socket, message.trackId)
         return
       case 'stream-preview':
         hub.relayPreview(socket, message.streamId, message.image, message.to)

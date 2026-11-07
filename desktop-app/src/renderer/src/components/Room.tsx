@@ -6,6 +6,7 @@ import { ChatPanel } from '@renderer/components/ChatPanel'
 import { ControlBar } from '@renderer/components/ControlBar'
 import { MemberList } from '@renderer/components/MemberList'
 import { SettingsSheet, type SettingsSection } from '@renderer/components/SettingsSheet'
+import { MusicDeck } from '@renderer/components/MusicDeck'
 import { SourcePickerModal } from '@renderer/components/SourcePickerModal'
 import { Stage, type CameraRail, type StageHandle } from '@renderer/components/Stage'
 import { type StageEntry } from '@renderer/components/StreamCard'
@@ -380,6 +381,21 @@ export function Room({ room }: { room: RoomController }) {
                 canShare={canShareScreen()}
               />
             </div>
+            {room.self ? (
+              <MusicDeck
+                state={room.music}
+                selfId={room.self.peerId}
+                busy={room.musicBusy}
+                localOnly={room.musicLocal}
+                volume={room.musicVolume}
+                muted={room.musicMuted}
+                onAdd={(url) => void room.addMusic(url)}
+                onVote={room.voteSkip}
+                onForce={room.forceSkip}
+                onVolume={room.setMusicVolume}
+                onToggleMute={room.toggleMusicMuted}
+              />
+            ) : null}
           </div>
           <div
             className={`room-chrome transition-opacity duration-300 ${dockVisible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}

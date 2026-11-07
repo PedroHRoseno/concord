@@ -1,4 +1,5 @@
 import { buildIceServers, fetchRemoteIceServers } from '@renderer/lib/ice'
+import { attachRemoteMusic, detachRemoteMusic } from '@renderer/lib/jukebox'
 import { attachRemoteVoice, detachRemoteVoice, renameRemoteVoice, VOICE_BITRATE } from '@renderer/lib/voice'
 import { publicProfileOf, sanitizeProfile } from '@renderer/lib/profile'
 import {
@@ -24,6 +25,8 @@ import {
   type StreamType,
   type TurnCredentials,
   type PublicProfile,
+  type MusicState,
+  type MusicTrack,
   type RoomCard,
   type ScreenGhost,
   type WatcherInfo
@@ -42,6 +45,7 @@ export interface MeshEvents {
   onChat: (message: ChatMessage) => void
   onChatHistory: (messages: ChatMessage[]) => void
   onRooms: (rooms: RoomCard[]) => void
+  onMusic: (state: MusicState) => void
   onLatency: (ms: number | null) => void
 }
 
@@ -170,7 +174,7 @@ export class MeshSession {
         peerId: this.peerId,
         displayName: this.displayName,
         profile: this.profile,
-        features: ['voice', 'chat'],
+        features: ['voice', 'chat', 'music'],
         unlisted: this.unlisted
       })
       this.socket.send({ type: 'watch-rooms' })
@@ -204,6 +208,55 @@ export class MeshSession {
 
   sendChat(text: string, image?: string): void {
     this.socket.send({ type: 'chat', text, image })
+  }
+
+  publishMusic(stream: MediaStream, title: string): void {
+    const streamId = streamIdFor(this.peerId, 'music')
+    const settings: CaptureSettings = {
+      sourceId: 'music',
+      sourceName: title.trim().slice(0, 180) || 'Música',
+      audioMode: 'device',
+      audioDeviceId: '',
+      resolution: '720p',
+      fps: 30,
+      maxBitrate: 1_000_000,
+      audioBitrate: 128_000,
+      contentHint: 'detail'
+    }
+    const existing = this.locals.get(streamId)
+    if (!existing) {
+      this.begin(streamId, 'music', stream, settings)
+      return
+    }
+    existing.gen += 1
+    const previous = existing.stream
+    existing.stream = stream
+    existing.settings = settings
+    const audio = stream.getAudioTracks().find((track) => track.readyState === 'live') ?? null
+    for (const link of this.links.values()) {
+      if (link.role !== 'host' || link.streamId !== streamId || !link.audioSender || !audio) continue
+      void link.audioSender.replaceTrack(audio).catch((error) => console.warn('Falha ao trocar a música.', error))
+    }
+    previous.getTracks().forEach((track) => {
+      if (track !== audio) track.stop()
+    })
+    this.socket.send({ type: 'stream-meta', streamId, meta: toStreamMeta(settings, streamId, 'music') })
+  }
+
+  addMusic(track: Omit<MusicTrack, 'id' | 'addedBy' | 'addedByName'>): void {
+    this.socket.send({ type: 'add-music', ...track })
+  }
+
+  voteSkip(): void {
+    this.socket.send({ type: 'vote-skip' })
+  }
+
+  forceSkip(): void {
+    this.socket.send({ type: 'force-skip' })
+  }
+
+  musicEnded(trackId: string): void {
+    this.socket.send({ type: 'music-ended', trackId })
   }
 
   async publishVoice(stream: MediaStream): Promise<void> {
@@ -277,7 +330,7 @@ export class MeshSession {
     }
     current.stream.getTracks().forEach((track) => track.stop())
     if (streamType === 'screen') this.stopPreviewLoop()
-    if (streamType !== 'voice') playStreamStopSound()
+    if (streamType === 'screen' || streamType === 'webcam') playStreamStopSound()
     if (this.mediaLocals() === 0) this.releaseSilent()
     this.socket.send({ type: 'stream-meta', streamId, meta: null })
     this.setCaptureActive(this.mediaLocals() > 0)
@@ -337,7 +390,7 @@ export class MeshSession {
   }
 
   dispose(): void {
-    for (const streamType of ['screen', 'webcam', 'voice'] as const) this.stopStream(streamType)
+    for (const streamType of ['screen', 'webcam', 'voice', 'music'] as const) this.stopStream(streamType)
     this.stopPreviewLoop()
     if (this.ghostTimer !== null) window.clearInterval(this.ghostTimer)
     this.ghostTimer = null
@@ -355,7 +408,7 @@ export class MeshSession {
     this.bindEnded(pub)
     const meta = toStreamMeta(settings, streamId, streamType)
     this.socket.send({ type: 'stream-meta', streamId, meta })
-    if (streamType !== 'voice') {
+    if (streamType === 'screen' || streamType === 'webcam') {
       this.setCaptureActive(true)
       playStreamStartSound()
     }
@@ -366,7 +419,7 @@ export class MeshSession {
 
   private mediaLocals(): number {
     let count = 0
-    for (const pub of this.locals.values()) if (pub.streamType !== 'voice') count += 1
+    for (const pub of this.locals.values()) if (pub.streamType === 'screen' || pub.streamType === 'webcam') count += 1
     return count
   }
 
@@ -424,7 +477,7 @@ export class MeshSession {
         const returning = this.ghostMatches(message.peer.peerId, message.peer.displayName)
         if (!this.peers.has(message.peer.peerId) && !returning) {
           playUserJoinSound()
-          if (message.peer.streams.some((meta) => meta.streamType !== 'voice')) playStreamStartSound()
+          if (message.peer.streams.some((meta) => meta.streamType === 'screen' || meta.streamType === 'webcam')) playStreamStartSound()
         }
         const peer = this.toRemote(message.peer)
         this.peers.set(message.peer.peerId, peer)
@@ -486,6 +539,9 @@ export class MeshSession {
       case 'rooms-updated':
         this.events.onRooms(message.rooms)
         return
+      case 'music':
+        this.events.onMusic(message.state)
+        return
       default:
         return
     }
@@ -508,7 +564,7 @@ export class MeshSession {
   }
 
   private considerWebcam(meta: StreamMeta): void {
-    if (meta.streamType === 'voice') {
+    if (meta.streamType === 'voice' || meta.streamType === 'music') {
       if (!this.watching.has(meta.streamId)) this.watch(meta.streamId)
       return
     }
@@ -567,7 +623,7 @@ export class MeshSession {
       const previous = peer.streams.get(streamId)
       const grace = previous?.streamType === 'screen' && this.watching.has(streamId)
       if (grace && previous) this.holdGhost(peer, previous)
-      else if (previous && !streamId.endsWith(':voice')) playStreamStopSound()
+      else if (previous && previous.streamType !== 'voice' && previous.streamType !== 'music') playStreamStopSound()
       peer.streams.delete(streamId)
       peer.watchers.delete(streamId)
       if (grace) this.watchMemory.set(streamId, Date.now() + 10_000)
@@ -581,7 +637,7 @@ export class MeshSession {
       const had = peer.streams.has(streamId)
       peer.streams.set(streamId, meta)
       const claimed = this.claimGhost(peer, meta)
-      if (!had && meta.streamType !== 'voice' && !claimed) playStreamStartSound()
+      if (!had && meta.streamType !== 'voice' && meta.streamType !== 'music' && !claimed) playStreamStartSound()
       this.considerWebcam(meta)
       if (!claimed) this.maybeRewatch(streamId)
     }
@@ -593,7 +649,7 @@ export class MeshSession {
       const list = this.localWatchers.get(streamId) ?? []
       if (!list.some((item) => item.peerId === watcher.peerId)) {
         this.localWatchers.set(streamId, [...list, watcher])
-        if (!streamId.endsWith(':voice')) playViewerJoinedMyStreamSound()
+        if (!streamId.endsWith(':voice') && !streamId.endsWith(':music')) playViewerJoinedMyStreamSound()
       }
       this.emitLocals()
       return
@@ -648,7 +704,7 @@ export class MeshSession {
     if (this.disposed || !pub) return
     if (viewerId === this.peerId) return
     const video = pub.stream.getVideoTracks()[0]
-    if (pub.streamType === 'voice') {
+    if (pub.streamType === 'voice' || pub.streamType === 'music') {
       await this.handleVoiceWatch(pub, viewerId)
       return
     }
@@ -716,7 +772,8 @@ export class MeshSession {
       link.audioSender = transceiver.sender
       preferOpus(transceiver)
       const offer = await link.pc.createOffer()
-      offer.sdp = tuneOpusVoice(offer.sdp ?? '', pub.settings.audioBitrate)
+      offer.sdp =
+        pub.streamType === 'music' ? tuneOpus(offer.sdp ?? '', pub.settings.audioBitrate) : tuneOpusVoice(offer.sdp ?? '', pub.settings.audioBitrate)
       await link.pc.setLocalDescription(offer)
       const description = link.pc.localDescription
       if (!description || this.links.get(key) !== link) return
@@ -874,7 +931,7 @@ export class MeshSession {
       this.pendingRewatch.delete(link.streamId)
       this.watching.delete(link.streamId)
       this.remoteStreams.delete(link.streamId)
-      if (!link.streamId.endsWith(':voice')) this.events.onError('A conexão de mídia falhou. Tente assistir de novo.')
+      if (!link.streamId.endsWith(':voice') && !link.streamId.endsWith(':music')) this.events.onError('A conexão de mídia falhou. Tente assistir de novo.')
     }
     this.closeLink(link.key)
     this.emit()
@@ -1012,6 +1069,10 @@ export class MeshSession {
         attachRemoteVoice(options.broadcasterId, this.peers.get(options.broadcasterId)?.displayName ?? '', media)
         return
       }
+      if (options.streamId.endsWith(':music')) {
+        attachRemoteMusic(media)
+        return
+      }
       this.remoteStreams.set(options.streamId, media)
       this.emit()
     }
@@ -1130,6 +1191,7 @@ export class MeshSession {
     if (!link) return
     this.links.delete(key)
     if (link.role === 'viewer' && link.streamId.endsWith(':voice')) detachRemoteVoice(link.broadcasterId)
+    if (link.role === 'viewer' && link.streamId.endsWith(':music')) detachRemoteMusic()
     link.pc.onconnectionstatechange = null
     link.pc.oniceconnectionstatechange = null
     link.pc.ontrack = null
@@ -1163,7 +1225,7 @@ export class MeshSession {
   private emitLocals(): void {
     if (this.disposed) return
     const publications: LocalPublication[] = [...this.locals.values()]
-      .filter((pub) => pub.streamType !== 'voice')
+      .filter((pub) => pub.streamType === 'screen' || pub.streamType === 'webcam')
       .map((pub) => ({
       streamId: pub.streamId,
       meta: toStreamMeta(pub.settings, pub.streamId, pub.streamType),
@@ -1183,7 +1245,7 @@ export class MeshSession {
       profile: peer.profile,
       hasVoice: [...peer.streams.values()].some((meta) => meta.streamType === 'voice'),
       streams: [...peer.streams.values()]
-        .filter((meta) => meta.streamType !== 'voice')
+        .filter((meta) => meta.streamType === 'screen' || meta.streamType === 'webcam')
         .map((meta) => ({
         streamId: meta.streamId,
         meta,
