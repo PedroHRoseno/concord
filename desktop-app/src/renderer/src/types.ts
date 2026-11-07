@@ -1,8 +1,28 @@
 export type ResolutionPreset = '720p' | '1080p' | '1440p' | 'native'
 export type ContentHint = 'motion' | 'detail'
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
-export type StreamType = 'screen' | 'webcam' | 'voice'
-export type Feature = 'voice' | 'chat'
+export type StreamType = 'screen' | 'webcam' | 'voice' | 'music'
+export type Feature = 'voice' | 'chat' | 'music'
+export type MusicProvider = 'youtube' | 'spotify'
+
+export interface MusicTrack {
+  id: string
+  sourceUrl: string
+  provider: MusicProvider
+  videoId: string
+  title: string
+  artist: string
+  artwork: string
+  addedBy: string
+  addedByName: string
+}
+
+export interface MusicState {
+  current: MusicTrack | null
+  queue: MusicTrack[]
+  votes: string[]
+  needed: number
+}
 
 export interface ChatMessage {
   id: string
@@ -85,6 +105,10 @@ export type ClientMessage =
   | { type: 'watch'; streamId: string }
   | { type: 'unwatch'; streamId: string }
   | { type: 'stream-preview'; streamId: string; image: string; to?: string }
+  | { type: 'add-music'; sourceUrl: string; provider: MusicProvider; videoId: string; title: string; artist: string; artwork: string }
+  | { type: 'vote-skip' }
+  | { type: 'force-skip' }
+  | { type: 'music-ended'; trackId: string }
   | { type: 'ping' }
 
 export type ServerMessage =
@@ -104,6 +128,7 @@ export type ServerMessage =
   | { type: 'rooms'; rooms: RoomCard[] }
   | { type: 'rooms-updated'; rooms: RoomCard[] }
   | { type: 'stream-preview'; peerId: string; streamId: string; image: string }
+  | { type: 'music'; state: MusicState }
   | { type: 'error'; message: string }
 
 export interface TurnCredentials {

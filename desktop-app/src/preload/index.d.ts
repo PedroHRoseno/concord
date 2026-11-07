@@ -36,6 +36,7 @@ export interface ElectronBridge {
   getSourcesSignature: () => Promise<string>
   getHiddenWindows: () => Promise<Array<{ process: string; title: string }>>
   prepareCapture: (options: CapturePrepareOptions) => Promise<boolean>
+  musicAudioUrl: (videoId: string) => Promise<string | null>
   setCaptureActive: (active: boolean) => Promise<void>
   getMicrophoneAccess: () => Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'>
   connectAudioLoopback: (onChunk: (bytes: Uint8Array) => void) => void

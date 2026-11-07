@@ -1,7 +1,27 @@
 export type ResolutionPreset = '720p' | '1080p' | '1440p' | 'native'
 export type ContentHint = 'motion' | 'detail'
-export type StreamType = 'screen' | 'webcam' | 'voice'
-export type Feature = 'voice' | 'chat'
+export type StreamType = 'screen' | 'webcam' | 'voice' | 'music'
+export type Feature = 'voice' | 'chat' | 'music'
+export type MusicProvider = 'youtube' | 'spotify'
+
+export interface MusicTrack {
+  id: string
+  sourceUrl: string
+  provider: MusicProvider
+  videoId: string
+  title: string
+  artist: string
+  artwork: string
+  addedBy: string
+  addedByName: string
+}
+
+export interface MusicState {
+  current: MusicTrack | null
+  queue: MusicTrack[]
+  votes: string[]
+  needed: number
+}
 
 export interface ChatMessage {
   id: string
@@ -93,6 +113,10 @@ export type ClientMessage =
   | { type: 'watch'; streamId: string }
   | { type: 'unwatch'; streamId: string }
   | { type: 'stream-preview'; streamId: string; image: string; to?: string }
+  | { type: 'add-music'; sourceUrl: string; provider: MusicProvider; videoId: string; title: string; artist: string; artwork: string }
+  | { type: 'vote-skip' }
+  | { type: 'force-skip' }
+  | { type: 'music-ended'; trackId: string }
   | { type: 'ping' }
 
 export type ServerMessage =
@@ -112,6 +136,7 @@ export type ServerMessage =
   | { type: 'rooms'; rooms: RoomCard[] }
   | { type: 'rooms-updated'; rooms: RoomCard[] }
   | { type: 'stream-preview'; peerId: string; streamId: string; image: string }
+  | { type: 'music'; state: MusicState }
   | { type: 'error'; message: string }
 
 const AVATAR_LIMIT = 12_000
@@ -131,7 +156,8 @@ export function sanitizeProfile(value: unknown): PublicProfile {
 }
 
 const RESOLUTIONS = new Set<ResolutionPreset>(['720p', '1080p', '1440p', 'native'])
-const STREAM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:(screen|webcam|voice)$/i
+const STREAM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:(screen|webcam|voice|music)$/i
+const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/
 
 function inRange(value: unknown, min: number, max: number): boolean {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
@@ -144,10 +170,10 @@ export function isStreamId(value: unknown): value is string {
 export function isStreamMeta(value: unknown): value is StreamMeta {
   if (!value || typeof value !== 'object') return false
   const meta = value as StreamMeta
-  if (meta.streamType === 'voice') {
+  if (meta.streamType === 'voice' || meta.streamType === 'music') {
     return (
       isStreamId(meta.streamId) &&
-      meta.streamId.endsWith(':voice') &&
+      meta.streamId.endsWith(`:${meta.streamType}`) &&
       typeof meta.sourceName === 'string' &&
       meta.sourceName.length <= 180 &&
       inRange(meta.audioBitrate, 16_000, 320_000)
@@ -177,7 +203,7 @@ const IMAGE_PREFIX = 'data:image/webp;base64,'
 export function parseFeatures(value: unknown): Set<Feature> {
   const set = new Set<Feature>()
   if (!Array.isArray(value)) return set
-  for (const item of value) if (item === 'voice' || item === 'chat') set.add(item)
+  for (const item of value) if (item === 'voice' || item === 'chat' || item === 'music') set.add(item)
   return set
 }
 
@@ -197,6 +223,24 @@ export function validateChat(
   }
   if (!body && !img) return { ok: false, error: 'Mensagem vazia.' }
   return { ok: true, text: body, image: img }
+}
+
+export function parseMusicRequest(
+  value: Record<string, unknown>
+): { ok: true; sourceUrl: string; provider: MusicProvider; videoId: string; title: string; artist: string; artwork: string } | { ok: false; error: string } {
+  const sourceUrl = typeof value.sourceUrl === 'string' ? value.sourceUrl.trim() : ''
+  const provider = value.provider === 'youtube' || value.provider === 'spotify' ? value.provider : null
+  const videoId = typeof value.videoId === 'string' ? value.videoId : ''
+  const title = typeof value.title === 'string' ? value.title.replace(/\s+/g, ' ').trim() : ''
+  const artist = typeof value.artist === 'string' ? value.artist.replace(/\s+/g, ' ').trim() : ''
+  const artwork = typeof value.artwork === 'string' ? value.artwork.trim() : ''
+  if (!provider) return { ok: false, error: 'Origem da música inválida.' }
+  if (!VIDEO_ID_RE.test(videoId)) return { ok: false, error: 'Vídeo do YouTube inválido.' }
+  if (!/^https:\/\/.{1,480}$/.test(sourceUrl)) return { ok: false, error: 'Link da música inválido.' }
+  if (title.length < 1 || title.length > 140) return { ok: false, error: 'Título da música inválido.' }
+  if (artist.length > 140) return { ok: false, error: 'Artista da música inválido.' }
+  if (artwork && !/^https:\/\/.{1,400}$/.test(artwork)) return { ok: false, error: 'Capa da música inválida.' }
+  return { ok: true, sourceUrl, provider, videoId, title, artist, artwork }
 }
 
 export function isSignalPayload(value: unknown): value is SignalPayload {

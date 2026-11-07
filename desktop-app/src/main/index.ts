@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, protocol, shell, Tray } from 'electron'
 import os from 'node:os'
 import { join } from 'path'
 import { registerCapture } from './capture'
@@ -6,7 +6,15 @@ import { registerHotkey } from './hotkey'
 import { resourcePath } from './paths'
 import { registerAudioLoopback } from './audioLoopback'
 import { registerDiscord } from './discord'
+import { registerMusic } from './music'
 import { registerUpdates } from './updates'
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'concord-media',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true }
+  }
+])
 
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('enable-gpu-rasterization')
@@ -244,6 +252,7 @@ function registerWindowControls(): void {
 
 app.whenReady().then(() => {
   registerCapture()
+  registerMusic()
   registerAudioLoopback()
   registerDiscord()
   registerUpdates()
