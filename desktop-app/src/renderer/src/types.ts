@@ -24,6 +24,14 @@ export interface MusicState {
   needed: number
 }
 
+export interface PlayCue {
+  trackId: string
+  videoId: string
+  sourceUrl: string
+  addedBy: string
+  currentTime: number
+}
+
 export interface ChatMessage {
   id: string
   peerId: string
@@ -109,6 +117,7 @@ export type ClientMessage =
   | { type: 'vote-skip' }
   | { type: 'force-skip' }
   | { type: 'music-ended'; trackId: string }
+  | { type: 'sync-time'; trackId: string; currentTime: number }
   | { type: 'ping' }
 
 export type ServerMessage =
@@ -129,6 +138,8 @@ export type ServerMessage =
   | { type: 'rooms-updated'; rooms: RoomCard[] }
   | { type: 'stream-preview'; peerId: string; streamId: string; image: string }
   | { type: 'music'; state: MusicState }
+  | { type: 'play-music'; trackId: string; videoId: string; sourceUrl: string; addedBy: string; currentTime: number }
+  | { type: 'sync-time'; trackId: string; currentTime: number }
   | { type: 'error'; message: string }
 
 export interface TurnCredentials {

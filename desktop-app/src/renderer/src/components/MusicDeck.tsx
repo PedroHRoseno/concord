@@ -7,7 +7,7 @@ interface MusicDeckProps {
   state: MusicState | null
   selfId: string
   busy: boolean
-  localOnly: boolean
+  blocked: boolean
   volume: number
   muted: boolean
   onAdd: (url: string) => void
@@ -15,9 +15,18 @@ interface MusicDeckProps {
   onForce: () => void
   onVolume: (value: number) => void
   onToggleMute: () => void
+  onResume: () => void
 }
 
-export function MusicDeck({ state, selfId, busy, localOnly, volume, muted, onAdd, onVote, onForce, onVolume, onToggleMute }: MusicDeckProps) {
+function SyncOverlay({ onResume, className }: { onResume: () => void; className: string }) {
+  return (
+    <button type="button" onClick={onResume} className={className}>
+      🎵 Clique aqui para sincronizar o Jukebox
+    </button>
+  )
+}
+
+export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, onVote, onForce, onVolume, onToggleMute, onResume }: MusicDeckProps) {
   const [queueOpen, setQueueOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const current = state?.current ?? null
@@ -36,7 +45,11 @@ export function MusicDeck({ state, selfId, busy, localOnly, volume, muted, onAdd
   }
 
   const card = (
-    <section className="pointer-events-auto flex w-full max-w-xl flex-wrap items-center gap-3 rounded-2xl bg-panel/95 p-3 shadow-2xl ring-1 ring-white/10">
+    <section className="pointer-events-auto relative w-full max-w-xl rounded-2xl bg-panel/95 p-3 shadow-2xl ring-1 ring-white/10">
+      {blocked && current ? (
+        <SyncOverlay onResume={onResume} className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-blurple px-4 text-center text-sm font-semibold text-white shadow-2xl" />
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3" inert={blocked && current ? true : undefined}>
       {current?.artwork ? (
         <img src={current.artwork} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
       ) : (
@@ -60,7 +73,6 @@ export function MusicDeck({ state, selfId, busy, localOnly, volume, muted, onAdd
             ))}
           </span>
         ) : null}
-        {localOnly && owner ? <p className="mt-1 text-[11px] text-muted">Tocando neste aparelho. No computador a sala também escuta.</p> : null}
       </div>
       {current ? (
         <button
@@ -94,6 +106,7 @@ export function MusicDeck({ state, selfId, busy, localOnly, volume, muted, onAdd
         <ListMusic className="h-4 w-4" aria-hidden="true" />
         Fila{queue.length > 0 ? ` ${queue.length}` : ''}
       </button>
+      </div>
     </section>
   )
 
@@ -109,6 +122,9 @@ export function MusicDeck({ state, selfId, busy, localOnly, volume, muted, onAdd
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {blocked && current ? (
+              <SyncOverlay onResume={onResume} className="mb-3 flex h-12 w-full items-center justify-center rounded-xl bg-blurple px-4 text-center text-sm font-semibold text-white" />
+            ) : null}
             <form onSubmit={submit} className="mb-3 flex gap-2">
               <input
                 value={draft}

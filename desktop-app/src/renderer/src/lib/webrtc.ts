@@ -1,5 +1,4 @@
 import { buildIceServers, fetchRemoteIceServers } from '@renderer/lib/ice'
-import { attachRemoteMusic, detachRemoteMusic } from '@renderer/lib/jukebox'
 import { attachRemoteVoice, detachRemoteVoice, renameRemoteVoice, VOICE_BITRATE } from '@renderer/lib/voice'
 import { publicProfileOf, sanitizeProfile } from '@renderer/lib/profile'
 import {
@@ -27,6 +26,7 @@ import {
   type PublicProfile,
   type MusicState,
   type MusicTrack,
+  type PlayCue,
   type RoomCard,
   type ScreenGhost,
   type WatcherInfo
@@ -46,6 +46,8 @@ export interface MeshEvents {
   onChatHistory: (messages: ChatMessage[]) => void
   onRooms: (rooms: RoomCard[]) => void
   onMusic: (state: MusicState) => void
+  onPlayMusic: (cue: PlayCue) => void
+  onMusicSync: (trackId: string, currentTime: number) => void
   onLatency: (ms: number | null) => void
 }
 
@@ -210,39 +212,6 @@ export class MeshSession {
     this.socket.send({ type: 'chat', text, image })
   }
 
-  publishMusic(stream: MediaStream, title: string): void {
-    const streamId = streamIdFor(this.peerId, 'music')
-    const settings: CaptureSettings = {
-      sourceId: 'music',
-      sourceName: title.trim().slice(0, 180) || 'Música',
-      audioMode: 'device',
-      audioDeviceId: '',
-      resolution: '720p',
-      fps: 30,
-      maxBitrate: 1_000_000,
-      audioBitrate: 128_000,
-      contentHint: 'detail'
-    }
-    const existing = this.locals.get(streamId)
-    if (!existing) {
-      this.begin(streamId, 'music', stream, settings)
-      return
-    }
-    existing.gen += 1
-    const previous = existing.stream
-    existing.stream = stream
-    existing.settings = settings
-    const audio = stream.getAudioTracks().find((track) => track.readyState === 'live') ?? null
-    for (const link of this.links.values()) {
-      if (link.role !== 'host' || link.streamId !== streamId || !link.audioSender || !audio) continue
-      void link.audioSender.replaceTrack(audio).catch((error) => console.warn('Falha ao trocar a música.', error))
-    }
-    previous.getTracks().forEach((track) => {
-      if (track !== audio) track.stop()
-    })
-    this.socket.send({ type: 'stream-meta', streamId, meta: toStreamMeta(settings, streamId, 'music') })
-  }
-
   addMusic(track: Omit<MusicTrack, 'id' | 'addedBy' | 'addedByName'>): void {
     this.socket.send({ type: 'add-music', ...track })
   }
@@ -257,6 +226,11 @@ export class MeshSession {
 
   musicEnded(trackId: string): void {
     this.socket.send({ type: 'music-ended', trackId })
+  }
+
+  syncMusic(trackId: string, currentTime: number): void {
+    if (!Number.isFinite(currentTime)) return
+    this.socket.send({ type: 'sync-time', trackId, currentTime: Math.round(currentTime * 10) / 10 })
   }
 
   async publishVoice(stream: MediaStream): Promise<void> {
@@ -542,6 +516,18 @@ export class MeshSession {
       case 'music':
         this.events.onMusic(message.state)
         return
+      case 'play-music':
+        this.events.onPlayMusic({
+          trackId: message.trackId,
+          videoId: message.videoId,
+          sourceUrl: message.sourceUrl,
+          addedBy: message.addedBy,
+          currentTime: message.currentTime
+        })
+        return
+      case 'sync-time':
+        this.events.onMusicSync(message.trackId, message.currentTime)
+        return
       default:
         return
     }
@@ -564,7 +550,8 @@ export class MeshSession {
   }
 
   private considerWebcam(meta: StreamMeta): void {
-    if (meta.streamType === 'voice' || meta.streamType === 'music') {
+    if (meta.streamType === 'music') return
+    if (meta.streamType === 'voice') {
       if (!this.watching.has(meta.streamId)) this.watch(meta.streamId)
       return
     }
@@ -704,7 +691,8 @@ export class MeshSession {
     if (this.disposed || !pub) return
     if (viewerId === this.peerId) return
     const video = pub.stream.getVideoTracks()[0]
-    if (pub.streamType === 'voice' || pub.streamType === 'music') {
+    if (pub.streamType === 'music') return
+    if (pub.streamType === 'voice') {
       await this.handleVoiceWatch(pub, viewerId)
       return
     }
@@ -772,8 +760,7 @@ export class MeshSession {
       link.audioSender = transceiver.sender
       preferOpus(transceiver)
       const offer = await link.pc.createOffer()
-      offer.sdp =
-        pub.streamType === 'music' ? tuneOpus(offer.sdp ?? '', pub.settings.audioBitrate) : tuneOpusVoice(offer.sdp ?? '', pub.settings.audioBitrate)
+      offer.sdp = tuneOpusVoice(offer.sdp ?? '', pub.settings.audioBitrate)
       await link.pc.setLocalDescription(offer)
       const description = link.pc.localDescription
       if (!description || this.links.get(key) !== link) return
@@ -1069,10 +1056,7 @@ export class MeshSession {
         attachRemoteVoice(options.broadcasterId, this.peers.get(options.broadcasterId)?.displayName ?? '', media)
         return
       }
-      if (options.streamId.endsWith(':music')) {
-        attachRemoteMusic(media)
-        return
-      }
+      if (options.streamId.endsWith(':music')) return
       this.remoteStreams.set(options.streamId, media)
       this.emit()
     }
@@ -1191,7 +1175,6 @@ export class MeshSession {
     if (!link) return
     this.links.delete(key)
     if (link.role === 'viewer' && link.streamId.endsWith(':voice')) detachRemoteVoice(link.broadcasterId)
-    if (link.role === 'viewer' && link.streamId.endsWith(':music')) detachRemoteMusic()
     link.pc.onconnectionstatechange = null
     link.pc.oniceconnectionstatechange = null
     link.pc.ontrack = null

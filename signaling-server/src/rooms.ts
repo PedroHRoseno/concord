@@ -36,6 +36,7 @@ export interface Member {
   speaking: boolean
   muted: boolean
   musicTimes: number[]
+  musicSyncAt: number
 }
 
 const PINNED_ROOMS: Array<{ roomId: string; label: string }> = [
@@ -55,10 +56,17 @@ const QUEUE_LIMIT = 40
 const MUSIC_WINDOW_MS = 10_000
 const MUSIC_BURST = 5
 
+interface MusicAnchor {
+  currentTime: number
+  at: number
+}
+
 interface RoomMusic {
   current: MusicTrack | null
   queue: MusicTrack[]
   votes: Set<string>
+  startedAt: number
+  anchor: MusicAnchor | null
 }
 
 const isVoiceId = (streamId: string): boolean => streamId.endsWith(':voice')
@@ -138,7 +146,8 @@ export class RoomHub {
       chatTimes: [],
       speaking: false,
       muted: false,
-      musicTimes: []
+      musicTimes: [],
+      musicSyncAt: 0
     }
     room.set(peerId, member)
     this.bySocket.set(socket, member)
@@ -150,7 +159,12 @@ export class RoomHub {
     if (feats.has('chat')) {
       this.send(socket, { type: 'chat-history', messages: this.history.get(roomId) ?? [] })
     }
-    if (feats.has('music')) this.send(socket, { type: 'music', state: this.publicMusic(roomId) })
+    if (feats.has('music')) {
+      this.send(socket, { type: 'music', state: this.publicMusic(roomId) })
+      const playing = this.music.get(roomId)
+      const cue = playing ? this.playMessage(playing) : null
+      if (cue) this.send(socket, cue)
+    }
     console.log(`[${roomId}] ${name} entrou (${room.size})`)
     this.touchDirectory()
     return { ok: true }
@@ -431,8 +445,15 @@ export class RoomHub {
       addedByName: member.displayName
     }
     member.musicTimes.push(now)
-    if (!state.current) state.current = track
-    else state.queue.push(track)
+    if (!state.current) {
+      state.current = track
+      state.startedAt = now
+      state.anchor = null
+      this.pushMusic(member.roomId)
+      this.pushPlay(member.roomId)
+      return
+    }
+    state.queue.push(track)
     this.pushMusic(member.roomId)
   }
 
@@ -470,10 +491,25 @@ export class RoomHub {
     this.advance(member.roomId)
   }
 
+  syncMusic(socket: WebSocket, trackId: unknown, currentTime: unknown): void {
+    const member = this.require(socket)
+    if (!member || !member.features.has('music')) return
+    if (typeof trackId !== 'string' || trackId.length < 1 || trackId.length > 80) return
+    if (typeof currentTime !== 'number' || !Number.isFinite(currentTime) || currentTime < 0 || currentTime > 12 * 60 * 60) return
+    const state = this.music.get(member.roomId)
+    if (!state?.current || state.current.id !== trackId || state.current.addedBy !== member.peerId) return
+    const now = Date.now()
+    if (now - member.musicSyncAt < 3500) return
+    member.musicSyncAt = now
+    const time = Math.round(currentTime * 10) / 10
+    state.anchor = { currentTime: time, at: now }
+    this.broadcast(member.roomId, { type: 'sync-time', trackId, currentTime: time }, member.peerId, 'music')
+  }
+
   private musicOf(roomId: string): RoomMusic {
     const existing = this.music.get(roomId)
     if (existing) return existing
-    const created: RoomMusic = { current: null, queue: [], votes: new Set() }
+    const created: RoomMusic = { current: null, queue: [], votes: new Set(), startedAt: 0, anchor: null }
     this.music.set(roomId, created)
     return created
   }
@@ -505,10 +541,44 @@ export class RoomHub {
     const state = this.musicOf(roomId)
     const room = this.rooms.get(roomId)
     state.votes.clear()
+    state.anchor = null
     let next = state.queue.shift() ?? null
     while (next && room && !room.has(next.addedBy)) next = state.queue.shift() ?? null
     state.current = next
+    state.startedAt = next ? Date.now() : 0
     this.pushMusic(roomId)
+    if (next) this.pushPlay(roomId)
+  }
+
+  private estimatedTime(state: RoomMusic): number {
+    const now = Date.now()
+    const raw = state.anchor
+      ? state.anchor.currentTime + (now - state.anchor.at) / 1000
+      : state.startedAt > 0
+        ? (now - state.startedAt) / 1000
+        : 0
+    if (!Number.isFinite(raw) || raw < 0) return 0
+    return Math.round(Math.min(raw, 12 * 60 * 60) * 10) / 10
+  }
+
+  private playMessage(state: RoomMusic): Extract<ServerMessage, { type: 'play-music' }> | null {
+    const track = state.current
+    if (!track) return null
+    return {
+      type: 'play-music',
+      trackId: track.id,
+      videoId: track.videoId,
+      sourceUrl: track.sourceUrl,
+      addedBy: track.addedBy,
+      currentTime: this.estimatedTime(state)
+    }
+  }
+
+  private pushPlay(roomId: string): void {
+    const state = this.music.get(roomId)
+    const message = state ? this.playMessage(state) : null
+    if (!message) return
+    this.broadcast(roomId, message, undefined, 'music')
   }
 
   private noteMusicLeave(member: Member): void {

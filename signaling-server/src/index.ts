@@ -197,6 +197,9 @@ wss.on('connection', (socket) => {
       case 'music-ended':
         hub.musicEnded(socket, message.trackId)
         return
+      case 'sync-time':
+        hub.syncMusic(socket, message.trackId, message.currentTime)
+        return
       case 'stream-preview':
         hub.relayPreview(socket, message.streamId, message.image, message.to)
         return

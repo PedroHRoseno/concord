@@ -9,7 +9,7 @@ import {
   systemAudioWarning,
   watchStandby
 } from '@renderer/lib/capture'
-import { playHost, readMusicMuted, readMusicVolume, setMusicDeafened, stopJukebox, subscribeMusicPrefs, writeMusicMuted, writeMusicVolume, musicIsLocalOnly } from '@renderer/lib/jukebox'
+import { alignJukebox, musicNeedsGesture, playLocal, readJukeboxSyncTime, readMusicMuted, readMusicVolume, resumeJukebox, setMusicDeafened, stopJukebox, subscribeJukebox, subscribeMusicPrefs, writeMusicMuted, writeMusicVolume } from '@renderer/lib/jukebox'
 import { resolveMusicLink } from '@renderer/lib/music-link'
 import { normalizeTurn } from '@renderer/lib/ice'
 import { isMobile } from '@renderer/lib/platform'
@@ -34,6 +34,7 @@ import type {
   LocalPublication,
   PeerView,
   MusicState,
+  PlayCue,
   RoomCard,
   ScreenGhost,
   UserProfile,
@@ -120,8 +121,9 @@ export function useRoom() {
   const [latency, setLatency] = useState<number | null>(null)
   const [rosterReady, setRosterReady] = useState(false)
   const [music, setMusic] = useState<MusicState | null>(null)
+  const [musicCue, setMusicCue] = useState<PlayCue | null>(null)
   const [musicBusy, setMusicBusy] = useState(false)
-  const [musicLocal, setMusicLocal] = useState(false)
+  const [musicBlocked, setMusicBlocked] = useState(false)
   const [musicVolume, setMusicVolumeState] = useState(readMusicVolume)
   const [musicMuted, setMusicMutedState] = useState(readMusicMuted)
   const lastInputRef = useRef<LobbyInput | null>(null)
@@ -130,6 +132,7 @@ export function useRoom() {
   const micBeforeDeafRef = useRef(false)
   const voiceLiveRef = useRef(false)
   const selfIdRef = useRef('')
+  const musicCueRef = useRef<PlayCue | null>(null)
   const standbyStopRef = useRef<(() => void) | null>(null)
 
   const stopStandbyWatch = useCallback(() => {
@@ -139,9 +142,7 @@ export function useRoom() {
   const isolateAudio = audioRoute === 'system'
   localsRef.current = locals
   const musicTrackId = music?.current?.id ?? ''
-  const musicOwnerId = music?.current?.addedBy ?? ''
-  const musicVideoId = music?.current?.videoId ?? ''
-  const musicTitle = music?.current?.title ?? ''
+  musicCueRef.current = musicCue
 
   useEffect(
     () =>
@@ -152,35 +153,42 @@ export function useRoom() {
     []
   )
 
+  useEffect(() => subscribeJukebox(() => setMusicBlocked(musicNeedsGesture())), [])
+
   useEffect(() => {
-    const selfId = selfIdRef.current
-    if (!musicTrackId || musicOwnerId !== selfId) {
+    if (!musicTrackId) setMusicCue(null)
+  }, [musicTrackId])
+
+  useEffect(() => {
+    if (!musicCue) {
       stopJukebox()
-      if (sessionRef.current) sessionRef.current.stopStream('music')
-      setMusicLocal(false)
       return
     }
+    const trackId = musicCue.trackId
+    const maestro = musicCue.addedBy === selfIdRef.current
     let cancelled = false
-    void playHost(musicVideoId, () => {
-      if (!cancelled) sessionRef.current?.musicEnded(musicTrackId)
+    void playLocal(musicCue.videoId, musicCue.currentTime, maestro ? () => {
+      if (!cancelled) sessionRef.current?.musicEnded(trackId)
+    } : null).catch((caught) => {
+      if (!cancelled) setError(caught instanceof Error ? caught.message : 'Não foi possível tocar a música.')
     })
-      .then((stream) => {
-        if (cancelled) {
-          stream?.getTracks().forEach((track) => track.stop())
-          return
-        }
-        setMusicLocal(musicIsLocalOnly())
-        if (stream) sessionRef.current?.publishMusic(stream, musicTitle)
-        else sessionRef.current?.stopStream('music')
-      })
-      .catch((caught) => {
-        if (!cancelled) setError(caught instanceof Error ? caught.message : 'Não foi possível tocar a música.')
-      })
+    if (!maestro) {
+      return () => {
+        cancelled = true
+        stopJukebox()
+      }
+    }
+    const timer = window.setInterval(() => {
+      const time = readJukeboxSyncTime()
+      if (time === null) return
+      sessionRef.current?.syncMusic(trackId, time)
+    }, 5000)
     return () => {
       cancelled = true
+      window.clearInterval(timer)
       stopJukebox()
     }
-  }, [musicTrackId, musicOwnerId, musicVideoId, musicTitle])
+  }, [musicCue])
 
   useEffect(() => {
     return () => {
@@ -320,6 +328,7 @@ export function useRoom() {
   const forceSkip = useCallback(() => sessionRef.current?.forceSkip(), [])
   const setMusicVolume = useCallback((value: number) => writeMusicVolume(value), [])
   const toggleMusicMuted = useCallback(() => writeMusicMuted(!readMusicMuted()), [])
+  const resumeMusic = useCallback(() => resumeJukebox(), [])
 
   const join = useCallback((input: LobbyInput) => {
     const problem = validateLobby(input)
@@ -330,7 +339,7 @@ export function useRoom() {
     stopStandbyWatch()
     stopJukebox()
     setMusic(null)
-    setMusicLocal(false)
+    setMusicCue(null)
     sessionRef.current?.dispose()
     const peerId = createPeerId()
     const saved = writeProfile({ ...input.profile, displayName: input.displayName.trim() })
@@ -353,6 +362,14 @@ export function useRoom() {
         },
         onRooms: setRooms,
         onMusic: setMusic,
+        onPlayMusic: (next) => {
+          setMusicCue((current) => (current?.trackId === next.trackId ? current : next))
+        },
+        onMusicSync: (trackId, currentTime) => {
+          const current = musicCueRef.current
+          if (!current || current.trackId !== trackId || current.addedBy === selfIdRef.current) return
+          alignJukebox(currentTime)
+        },
         onLatency: setLatency,
         onLocals: (publications) => {
           if (!publications.some((item) => item.meta.streamType === 'screen')) {
@@ -411,7 +428,7 @@ export function useRoom() {
     stopStandbyWatch()
     stopJukebox()
     setMusic(null)
-    setMusicLocal(false)
+    setMusicCue(null)
     setVoiceEndedHandler(null)
     sessionRef.current?.dispose()
     sessionRef.current = null
@@ -560,7 +577,7 @@ export function useRoom() {
     sendChat,
     music,
     musicBusy,
-    musicLocal,
+    musicBlocked,
     musicVolume,
     musicMuted,
     addMusic,
@@ -568,6 +585,7 @@ export function useRoom() {
     forceSkip,
     setMusicVolume,
     toggleMusicMuted,
+    resumeMusic,
     screenLive,
     webcamLive,
     join,

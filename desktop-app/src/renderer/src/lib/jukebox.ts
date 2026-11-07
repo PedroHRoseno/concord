@@ -1,19 +1,27 @@
 const VOLUME_KEY = 'concord.music.volume'
-const listeners = new Set<() => void>()
+const DRIFT_SECONDS = 2
+const YT_ENDED = 0
+const YT_PLAYING = 1
+const YT_BUFFERING = 3
+
+const prefListeners = new Set<() => void>()
+const playbackListeners = new Set<() => void>()
 let volume = readStoredVolume()
 let muted = false
 let deafened = false
 let generation = 0
-let audio: HTMLAudioElement | null = null
 let frame: YTPlayer | null = null
 let hostMount: HTMLDivElement | null = null
-let remoteAudio: HTMLAudioElement | null = null
-let remoteContext: AudioContext | null = null
-let remoteGain: GainNode | null = null
-let localOnly = false
+let gestureNeeded = false
+let pendingAlign: number | null = null
+let youtubeApi: Promise<void> | null = null
 
 interface YTPlayer {
   destroy: () => void
+  playVideo: () => void
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void
+  getCurrentTime: () => number
+  getPlayerState: () => number
   setVolume: (value: number) => void
   mute: () => void
   unMute: () => void
@@ -24,7 +32,11 @@ interface YTOptions {
   width: number
   height: number
   playerVars: Record<string, number | string>
-  events: { onReady?: (event: { target: YTPlayer }) => void; onStateChange?: (event: { data: number }) => void; onError?: () => void }
+  events: {
+    onReady?: (event: { target: YTPlayer }) => void
+    onStateChange?: (event: { data: number }) => void
+    onError?: () => void
+  }
 }
 
 declare global {
@@ -46,8 +58,18 @@ function readStoredVolume(): number {
   return 0.2
 }
 
-function emit(): void {
-  for (const listener of listeners) listener()
+function emitPrefs(): void {
+  for (const listener of prefListeners) listener()
+}
+
+function emitPlayback(): void {
+  for (const listener of playbackListeners) listener()
+}
+
+function setGesture(next: boolean): void {
+  if (gestureNeeded === next) return
+  gestureNeeded = next
+  emitPlayback()
 }
 
 function heard(): number {
@@ -55,10 +77,9 @@ function heard(): number {
   return volume
 }
 
-function applyHostVolume(): void {
-  const level = heard()
-  if (audio) audio.volume = level
+function applyVolume(): void {
   if (!frame) return
+  const level = heard()
   try {
     frame.setVolume(Math.round(level * 100))
     if (level === 0) frame.mute()
@@ -66,10 +87,6 @@ function applyHostVolume(): void {
   } catch {
     /* o player ainda está carregando */
   }
-}
-
-function applyRemoteVolume(): void {
-  if (remoteGain) remoteGain.gain.value = heard()
 }
 
 export function readMusicVolume(): number {
@@ -80,13 +97,18 @@ export function readMusicMuted(): boolean {
   return muted
 }
 
-export function musicIsLocalOnly(): boolean {
-  return localOnly
+export function musicNeedsGesture(): boolean {
+  return gestureNeeded
 }
 
 export function subscribeMusicPrefs(listener: () => void): () => void {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
+  prefListeners.add(listener)
+  return () => prefListeners.delete(listener)
+}
+
+export function subscribeJukebox(listener: () => void): () => void {
+  playbackListeners.add(listener)
+  return () => playbackListeners.delete(listener)
 }
 
 export function writeMusicVolume(next: number): void {
@@ -96,32 +118,23 @@ export function writeMusicVolume(next: number): void {
   } catch {
     /* a preferência vale nesta sessão */
   }
-  applyHostVolume()
-  applyRemoteVolume()
-  emit()
+  applyVolume()
+  emitPrefs()
 }
 
 export function writeMusicMuted(next: boolean): void {
   muted = next
-  applyHostVolume()
-  applyRemoteVolume()
-  emit()
+  applyVolume()
+  emitPrefs()
 }
 
 export function setMusicDeafened(next: boolean): void {
   if (deafened === next) return
   deafened = next
-  applyHostVolume()
-  applyRemoteVolume()
+  applyVolume()
 }
 
 function clearHost(): void {
-  audio?.pause()
-  if (audio) {
-    audio.src = ''
-    audio.onended = null
-  }
-  audio = null
   try {
     frame?.destroy()
   } catch {
@@ -134,13 +147,15 @@ function clearHost(): void {
 
 export function stopJukebox(): void {
   generation += 1
-  localOnly = false
+  pendingAlign = null
   clearHost()
+  setGesture(false)
 }
 
 function loadYoutubeApi(): Promise<void> {
   if (window.YT?.Player) return Promise.resolve()
-  return new Promise((resolve, reject) => {
+  if (youtubeApi) return youtubeApi
+  youtubeApi = new Promise((resolve, reject) => {
     const previous = window.onYouTubeIframeAPIReady
     window.onYouTubeIframeAPIReady = () => {
       previous?.()
@@ -149,18 +164,48 @@ function loadYoutubeApi(): Promise<void> {
     const script = document.createElement('script')
     script.src = 'https://www.youtube.com/iframe_api'
     script.async = true
-    script.onerror = () => reject(new Error('Não foi possível carregar o player do YouTube.'))
+    script.onerror = () => {
+      youtubeApi = null
+      reject(new Error('Não foi possível carregar o player do YouTube.'))
+    }
     document.head.appendChild(script)
   })
+  return youtubeApi
 }
 
-function playIframe(videoId: string, gen: number, onEnded: () => void): Promise<void> {
+function playerState(player: YTPlayer): number {
+  try {
+    return player.getPlayerState()
+  } catch {
+    return -1
+  }
+}
+
+function armAutoplayCheck(player: YTPlayer, gen: number, note: (state: number) => void): void {
+  window.setTimeout(() => {
+    if (gen !== generation || frame !== player) return
+    note(playerState(player))
+  }, 1500)
+}
+
+/** Cada cliente toca a faixa no próprio aparelho. `onEnded` só vem do maestro. */
+export function playLocal(videoId: string, startAt: number, onEnded: (() => void) | null): Promise<void> {
+  const gen = ++generation
+  pendingAlign = null
+  clearHost()
+  setGesture(false)
+  let ended = false
+  const finish = () => {
+    if (ended || gen !== generation) return
+    ended = true
+    onEnded?.()
+  }
   return loadYoutubeApi().then(
     () =>
-      new Promise((resolve, reject) => {
+      new Promise<void>((resolve, reject) => {
         const Factory = window.YT?.Player
         if (gen !== generation || !Factory) {
-          reject(new Error('A música foi trocada.'))
+          resolve()
           return
         }
         const mount = document.createElement('div')
@@ -172,30 +217,57 @@ function playIframe(videoId: string, gen: number, onEnded: () => void): Promise<
         mount.style.pointerEvents = 'none'
         document.body.appendChild(mount)
         hostMount = mount
-        let settled = false
+        const begin = startAt > 0.5 && Number.isFinite(startAt) ? startAt : 0
+        let played = false
+        let readyForGesture = false
+        const note = (state: number) => {
+          if (gen !== generation) return
+          if (state === YT_PLAYING) {
+            played = true
+            setGesture(false)
+            return
+          }
+          if (state === YT_BUFFERING) {
+            setGesture(false)
+            return
+          }
+          if (state === YT_ENDED) {
+            setGesture(false)
+            finish()
+            return
+          }
+          if (readyForGesture && !played) setGesture(true)
+        }
         frame = new Factory(mount, {
           videoId,
           width: 320,
           height: 180,
-          playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0 },
+          playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0, playsinline: 1 },
           events: {
             onReady: (event) => {
               if (gen !== generation) {
                 event.target.destroy()
+                resolve()
                 return
               }
-              applyHostVolume()
-              if (!settled) {
-                settled = true
-                resolve()
-              }
+              applyVolume()
+              if (begin > 0) event.target.seekTo(begin, true)
+              if (pendingAlign !== null && Math.abs(pendingAlign - begin) > DRIFT_SECONDS) event.target.seekTo(pendingAlign, true)
+              pendingAlign = null
+              event.target.playVideo()
+              armAutoplayCheck(event.target, gen, (state) => {
+                readyForGesture = true
+                note(state)
+              })
+              resolve()
             },
-            onStateChange: (event) => {
-              if (gen === generation && event.data === 0) onEnded()
-            },
+            onStateChange: (event) => note(event.data),
             onError: () => {
-              if (gen !== generation || settled) return
-              settled = true
+              if (gen !== generation) {
+                resolve()
+                return
+              }
+              finish()
               reject(new Error('O YouTube recusou essa faixa.'))
             }
           }
@@ -204,74 +276,53 @@ function playIframe(videoId: string, gen: number, onEnded: () => void): Promise<
   )
 }
 
-async function playCaptured(videoId: string, gen: number, onEnded: () => void): Promise<MediaStream | null> {
-  const upstream = await window.electronAPI?.musicAudioUrl(videoId)
-  if (!upstream || gen !== generation) return null
-  const element = new Audio()
-  element.crossOrigin = 'anonymous'
-  element.preload = 'auto'
-  element.src = `concord-media://play/?src=${encodeURIComponent(upstream)}`
-  audio = element
-  applyHostVolume()
-  element.onended = () => {
-    if (gen === generation) onEnded()
+export function readJukeboxTime(): number | null {
+  if (!frame) return null
+  try {
+    const time = frame.getCurrentTime()
+    return Number.isFinite(time) && time >= 0 ? time : null
+  } catch {
+    return null
   }
-  await element.play()
-  if (gen !== generation) return null
-  const captured = (element as HTMLMediaElement & { captureStream?: () => MediaStream }).captureStream?.()
-  const track = captured?.getAudioTracks().find((item) => item.readyState === 'live')
-  return track ? new MediaStream([track]) : null
 }
 
-/** Quem adicionou a faixa toca o áudio e, no desktop, publica a track para a sala. */
-export async function playHost(videoId: string, onEnded: () => void): Promise<MediaStream | null> {
-  const gen = ++generation
-  clearHost()
-  localOnly = false
-  if (window.electronAPI?.musicAudioUrl) {
-    try {
-      const stream = await playCaptured(videoId, gen, onEnded)
-      if (gen !== generation) return null
-      if (stream) return stream
-      clearHost()
-    } catch (error) {
-      if (gen !== generation) return null
-      console.warn('Áudio direto do YouTube indisponível.', error)
-      clearHost()
-    }
+/** O maestro só publica o tempo quando a faixa está de fato andando. */
+export function readJukeboxSyncTime(): number | null {
+  if (!frame) return null
+  const state = playerState(frame)
+  if (state !== YT_PLAYING && state !== YT_BUFFERING) return null
+  return readJukeboxTime()
+}
+
+export function alignJukebox(seconds: number): void {
+  if (!Number.isFinite(seconds) || seconds < 0) return
+  if (!frame) {
+    pendingAlign = seconds
+    return
   }
-  await playIframe(videoId, gen, onEnded)
-  if (gen !== generation) return null
-  localOnly = true
-  return null
+  const local = readJukeboxTime()
+  if (local !== null && Math.abs(local - seconds) <= DRIFT_SECONDS) return
+  try {
+    frame.seekTo(seconds, true)
+  } catch {
+    pendingAlign = seconds
+  }
 }
 
-/** O áudio recebido fica no grafo local, separado da voz e da tela. */
-export function attachRemoteMusic(stream: MediaStream): void {
-  detachRemoteMusic()
-  const element = document.createElement('audio')
-  element.autoplay = true
-  element.muted = true
-  element.srcObject = stream
-  element.play().catch(() => undefined)
-  remoteAudio = element
-  const context = new AudioContext()
-  const source = context.createMediaStreamSource(stream)
-  const gain = context.createGain()
-  gain.gain.value = heard()
-  source.connect(gain)
-  gain.connect(context.destination)
-  void context.resume()
-  remoteContext = context
-  remoteGain = gain
-}
-
-export function detachRemoteMusic(): void {
-  remoteAudio?.pause()
-  if (remoteAudio) remoteAudio.srcObject = null
-  remoteAudio = null
-  remoteGain = null
-  const context = remoteContext
-  remoteContext = null
-  void context?.close()
+/** Precisa rodar no clique: o navegador só libera o áudio com um gesto. */
+export function resumeJukebox(): void {
+  const player = frame
+  if (!player) return
+  try {
+    player.playVideo()
+  } catch {
+    setGesture(true)
+    return
+  }
+  setGesture(false)
+  window.setTimeout(() => {
+    if (frame !== player) return
+    const state = playerState(player)
+    if (state !== YT_PLAYING && state !== YT_BUFFERING && state !== YT_ENDED) setGesture(true)
+  }, 700)
 }

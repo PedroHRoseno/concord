@@ -76,7 +76,6 @@ const api = {
     loopbackWithScreen?: boolean
   }): Promise<{ ok: boolean; waiting: boolean }> => ipcRenderer.invoke('capture:prepare', options),
   probeCapture: (sourceId: string): Promise<boolean> => ipcRenderer.invoke('capture:probe', sourceId),
-  musicAudioUrl: (videoId: string): Promise<string | null> => ipcRenderer.invoke('music:audio-url', videoId),
   setCaptureActive: (active: boolean): Promise<void> => ipcRenderer.invoke('capture:set-active', active),
   getMicrophoneAccess: (): Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'> =>
     ipcRenderer.invoke('audio:microphone-access'),

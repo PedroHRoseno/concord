@@ -6,11 +6,11 @@ alwaysApply: false
 
 # WebRTC e isolamento de áudio
 
-Cada publicação é uma track própria: `peerId:screen`, `peerId:webcam`, `peerId:voice` ou `peerId:music`. Não junte esses fluxos num `MediaStream` só.
+Cada publicação é uma track própria: `peerId:screen`, `peerId:webcam` ou `peerId:voice`. Não junte esses fluxos num `MediaStream` só. A música da sala não é track WebRTC: cada cliente toca o YouTube num player local e quem adicionou a faixa envia `sync-time`.
 
 - Voz recebida entra em `AudioContext` → `GainNode` do peer → analyser → ganho mestre → `destination`. O `<audio>` oculto fica `muted`, só para o Chromium soltar o fluxo. Proibido ligar essa track a `MediaStreamAudioDestinationNode` ou ao stream publicado de tela/webcam.
 - O loopback WASAPI não pode capturar a voz do Concord. Tela inteira exclui a árvore do processo Electron. Janela captura só o PID alvo. `isolateAudio` e o modo `excluded` não se misturam com `publishVoice`.
-- O servidor omite streams `voice` de quem entrou sem `features: ['voice']` e streams `music` de quem entrou sem `features: ['music']`. O palco filtra `voice` e `music` antes de montar card. A música recebida usa um ganho próprio, no padrão 0,2, e não entra no stream de tela nem no grafo da voz.
+- O servidor omite streams `voice` de quem entrou sem `features: ['voice']`. O palco filtra `voice` antes de montar card. O volume da música fica no player local, no padrão 0,2, e não entra no stream de tela nem no grafo da voz.
 - Ganho da live (`clampVolume` em `playback.ts`): 0 a 3, o slider de 0–300%. Ganho da voz (`MAX_GAIN` em `voice.ts`): 0 a 2, o slider de 0–200%. Mute de voz usa `track.enabled = false`. Deafen zera o ganho mestre e também muta o microfone.
 - Opus de voz: mono, 48 kHz, FEC, 96 kbps no desktop e 64 kbps no mobile. Não reutilize o `tuneOpus` estéreo da live.
 - ICE: `iceTransportPolicy: 'all'`. A lista vem de `/turn` (Cloudflare Realtime, cache curto) e o TURN manual do lobby continua como override. Falha de conexão refaz a offer com `iceRestart: true`.

@@ -386,7 +386,7 @@ export function Room({ room }: { room: RoomController }) {
                 state={room.music}
                 selfId={room.self.peerId}
                 busy={room.musicBusy}
-                localOnly={room.musicLocal}
+                blocked={room.musicBlocked}
                 volume={room.musicVolume}
                 muted={room.musicMuted}
                 onAdd={(url) => void room.addMusic(url)}
@@ -394,6 +394,7 @@ export function Room({ room }: { room: RoomController }) {
                 onForce={room.forceSkip}
                 onVolume={room.setMusicVolume}
                 onToggleMute={room.toggleMusicMuted}
+                onResume={room.resumeMusic}
               />
             ) : null}
           </div>
