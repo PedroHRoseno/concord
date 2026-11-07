@@ -2,6 +2,12 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [1.9.2] - 2026-11-07
+
+### Corrigido
+
+- O card da Jukebox saiu do palco e foi para o topo da lista Na Sala, acima de quem está conectado. Recolher a barra esconde o player.
+
 ## [1.9.1] - 2026-11-06
 
 ### Corrigido
