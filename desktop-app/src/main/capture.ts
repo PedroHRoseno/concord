@@ -11,6 +11,8 @@ let activeCaptures = 0
 let blockerId: number | null = null
 
 const emptyThumbnail = { width: 0, height: 0 }
+const SW_SHOWNOACTIVATE = 4
+const thumbnailCache = new Map<string, string>()
 
 function hwndOf(sourceId: string): number | null {
   const match = /^window:(\d+):/.exec(sourceId)
@@ -47,9 +49,24 @@ async function iconicSet(hwnds: number[]): Promise<Set<number>> {
   return found
 }
 
-async function restoreWindow(hwnd: number): Promise<void> {
+function thumbKey(sourceId: string): string {
+  const hwnd = hwndOf(sourceId)
+  return hwnd ? `hwnd:${hwnd}` : sourceId
+}
+
+function rememberThumbnail(sourceId: string, dataUrl: string): void {
+  if (!dataUrl.startsWith('data:image/')) return
+  thumbnailCache.set(thumbKey(sourceId), dataUrl)
+}
+
+function recallThumbnail(sourceId: string): string {
+  return thumbnailCache.get(thumbKey(sourceId)) ?? ''
+}
+
+/** Mostra a janela no tamanho anterior sem ativá-la, para o DWM voltar a renderizar atrás do Concord. */
+async function showNoActivate(hwnd: number): Promise<void> {
   if (process.platform !== 'win32' || hwnd <= 0) return
-  await runPowerShell(`${WIN32_TYPE} [ConcordWin]::ShowWindow([IntPtr]${hwnd}, 9) | Out-Null`)
+  await runPowerShell(`${WIN32_TYPE} [ConcordWin]::ShowWindow([IntPtr]${hwnd}, ${SW_SHOWNOACTIVATE}) | Out-Null`)
 }
 
 /**
@@ -160,18 +177,24 @@ export function registerCapture(): void {
     const iconic = await iconicSet(visible.map((source) => hwndOf(source.id) ?? 0))
     const hidden = await listHiddenWindows(new Set(sources.map((source) => source.id)))
     return [
-      ...visible.map((source) => ({
-        id: source.id,
-        name: source.name,
-        thumbnail: source.thumbnail.isEmpty() ? '' : source.thumbnail.toDataURL(),
-        appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
-        displayId: source.display_id,
-        minimized: iconic.has(hwndOf(source.id) ?? 0)
-      })),
+      ...visible.map((source) => {
+        const minimized = iconic.has(hwndOf(source.id) ?? 0)
+        const fresh = source.thumbnail.isEmpty() ? '' : source.thumbnail.toDataURL()
+        if (fresh && !minimized) rememberThumbnail(source.id, fresh)
+        const cached = recallThumbnail(source.id)
+        return {
+          id: source.id,
+          name: source.name,
+          thumbnail: minimized ? cached || fresh : fresh || cached,
+          appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
+          displayId: source.display_id,
+          minimized
+        }
+      }),
       ...hidden.map((row) => ({
         id: `window:${row.hwnd}:0`,
         name: row.title,
-        thumbnail: '',
+        thumbnail: recallThumbnail(`window:${row.hwnd}:0`),
         appIcon: null,
         displayId: '',
         minimized: true
@@ -190,26 +213,37 @@ export function registerCapture(): void {
     return listHiddenWindows(new Set(sources.map((source) => source.id)))
   })
 
+  ipcMain.handle('capture:probe', async (_event, sourceId: unknown) => {
+    if (typeof sourceId !== 'string' || !sourceId) return false
+    return Boolean(await findSource(sourceId))
+  })
+
   ipcMain.handle('capture:prepare', async (event, options: PendingCapture) => {
-    if (!options || typeof options.sourceId !== 'string') return false
+    if (!options || typeof options.sourceId !== 'string') return { ok: false, waiting: false }
     let sourceId = options.sourceId
+    let waiting = false
     const hwnd = hwndOf(sourceId)
     if (hwnd) {
-      await restoreWindow(hwnd)
-      let found = await findSource(sourceId)
+      const found = await findSource(sourceId)
       if (!found) {
-        await new Promise((resolve) => setTimeout(resolve, 400))
-        found = await findSource(sourceId)
+        waiting = true
+      } else {
+        sourceId = found.id
+        const iconic = await iconicSet([hwnd])
+        if (iconic.has(hwnd)) {
+          waiting = true
+          await showNoActivate(hwnd)
+        }
       }
-      if (found) sourceId = found.id
-      else if (sourceId.startsWith('window:')) return false
+    } else if (!(await findSource(sourceId))) {
+      return { ok: false, waiting: false }
     }
     pendingByContents.set(event.sender.id, {
       sourceId,
       shareAudio: Boolean(options.shareAudio),
       loopbackWithScreen: Boolean(options.loopbackWithScreen)
     })
-    return true
+    return { ok: true, waiting }
   })
 
   ipcMain.handle('audio:microphone-access', () => systemPreferences.getMediaAccessStatus('microphone'))
