@@ -1,7 +1,7 @@
 {
   "name": "concord-mobile",
   "private": true,
-  "version": "1.8.2",
+  "version": "1.9.0",
   "description": "App Android do Concord. O Capacitor fica fora das dependências do Electron.",
   "type": "module",
   "scripts": {

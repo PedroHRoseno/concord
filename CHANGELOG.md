@@ -2,6 +2,16 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [1.9.0] - 2026-11-06
+
+### Adicionado
+
+- Jukebox na sala, com fila compartilhada, links do YouTube e do Spotify, pulo pelo autor ou por voto de metade da sala, e volume da música começando em 20%.
+
+### Corrigido
+
+- Compartilhar uma janela minimizada não traz essa janela para a frente. Um jogo em tela cheia exclusiva fica em espera até o usuário voltar, e o seletor guarda a última miniatura.
+
 ## [1.8.2] - 2026-11-06
 
 ### Melhorado
