@@ -13,6 +13,11 @@ export interface CapturePrepareOptions {
   loopbackWithScreen?: boolean
 }
 
+export interface CapturePrepareResult {
+  ok: boolean
+  waiting: boolean
+}
+
 export interface QuickShareSettings {
   sourceId: string
   sourceName: string
@@ -35,7 +40,8 @@ export interface ElectronBridge {
   getDesktopSources: () => Promise<DesktopSourceInfo[]>
   getSourcesSignature: () => Promise<string>
   getHiddenWindows: () => Promise<Array<{ process: string; title: string }>>
-  prepareCapture: (options: CapturePrepareOptions) => Promise<boolean>
+  prepareCapture: (options: CapturePrepareOptions) => Promise<CapturePrepareResult>
+  probeCapture: (sourceId: string) => Promise<boolean>
   musicAudioUrl: (videoId: string) => Promise<string | null>
   setCaptureActive: (active: boolean) => Promise<void>
   getMicrophoneAccess: () => Promise<'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown'>

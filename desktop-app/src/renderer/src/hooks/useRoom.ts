@@ -4,8 +4,10 @@ import {
   captureDesktop,
   captureErrorMessage,
   captureWebcam,
+  isStandbyStream,
   releaseSystemAudioAnchor,
-  systemAudioWarning
+  systemAudioWarning,
+  watchStandby
 } from '@renderer/lib/capture'
 import { playHost, readMusicMuted, readMusicVolume, setMusicDeafened, stopJukebox, subscribeMusicPrefs, writeMusicMuted, writeMusicVolume, musicIsLocalOnly } from '@renderer/lib/jukebox'
 import { resolveMusicLink } from '@renderer/lib/music-link'
@@ -128,6 +130,12 @@ export function useRoom() {
   const micBeforeDeafRef = useRef(false)
   const voiceLiveRef = useRef(false)
   const selfIdRef = useRef('')
+  const standbyStopRef = useRef<(() => void) | null>(null)
+
+  const stopStandbyWatch = useCallback(() => {
+    standbyStopRef.current?.()
+    standbyStopRef.current = null
+  }, [])
   const isolateAudio = audioRoute === 'system'
   localsRef.current = locals
   const musicTrackId = music?.current?.id ?? ''
@@ -176,6 +184,8 @@ export function useRoom() {
 
   useEffect(() => {
     return () => {
+      standbyStopRef.current?.()
+      standbyStopRef.current = null
       setVoiceEndedHandler(null)
       sessionRef.current?.dispose()
       sessionRef.current = null
@@ -317,6 +327,7 @@ export function useRoom() {
       setError(problem)
       return
     }
+    stopStandbyWatch()
     stopJukebox()
     setMusic(null)
     setMusicLocal(false)
@@ -381,7 +392,7 @@ export function useRoom() {
     setError(null)
     setPhase('room')
     session.start()
-  }, [resetVoice])
+  }, [resetVoice, stopStandbyWatch])
 
   const switchRoom = useCallback(
     (roomId: string) => {
@@ -397,6 +408,7 @@ export function useRoom() {
   }, [])
 
   const leave = useCallback(() => {
+    stopStandbyWatch()
     stopJukebox()
     setMusic(null)
     setMusicLocal(false)
@@ -423,7 +435,7 @@ export function useRoom() {
     } catch {
       // O lobby segue visível mesmo se o navegador bloquear a sessão.
     }
-  }, [resetVoice])
+  }, [resetVoice, stopStandbyWatch])
 
   const publish = useCallback(async (settings: CaptureSettings) => {
     const session = sessionRef.current
@@ -432,10 +444,20 @@ export function useRoom() {
     setError(null)
     let stream: MediaStream | null = null
     try {
+      stopStandbyWatch()
       stream = await captureDesktop(settings)
       setAudioWarning(systemAudioWarning(stream, settings))
       setAudioRoute(audioCaptureRoute())
       await session.publish(stream, settings, 'screen')
+      if (isStandbyStream(stream)) {
+        standbyStopRef.current = watchStandby(settings, (next) => {
+          standbyStopRef.current = null
+          void session.publish(next, settings, 'screen').then(() => {
+            setAudioWarning(systemAudioWarning(next, settings))
+            setAudioRoute(audioCaptureRoute())
+          })
+        })
+      }
     } catch (caught) {
       stream?.getTracks().forEach((track) => track.stop())
       releaseSystemAudioAnchor()
@@ -444,7 +466,7 @@ export function useRoom() {
     } finally {
       setBusy(false)
     }
-  }, [])
+  }, [stopStandbyWatch])
 
   const publishWebcam = useCallback(async (settings: WebcamSettings) => {
     const session = sessionRef.current
@@ -472,13 +494,14 @@ export function useRoom() {
   }, [])
 
   const stopShare = useCallback((streamType: 'screen' | 'webcam' = 'screen') => {
+    if (streamType === 'screen') stopStandbyWatch()
     sessionRef.current?.stopStream(streamType)
     if (streamType === 'screen') {
       releaseSystemAudioAnchor()
       setAudioWarning(null)
       setAudioRoute('none')
     }
-  }, [])
+  }, [stopStandbyWatch])
 
   const watch = useCallback((streamId: string) => {
     sessionRef.current?.watch(streamId)
