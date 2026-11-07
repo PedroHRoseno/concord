@@ -250,8 +250,8 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                 <div className="rounded-xl bg-app p-3 text-xs leading-5 text-muted ring-1 ring-line">
                   <p className="font-semibold text-ink">A lista se atualiza sozinha. Se o jogo ainda não aparece:</p>
                   <ul className="mt-1 list-disc space-y-1 pl-5">
-                    <li>Janelas minimizadas entram na lista com a tag "Janela minimizada". Ao escolher uma, o Concord restaura a janela antes de capturar.</li>
-                    <li>Tela cheia exclusiva (comum em jogos antigos) costuma falhar ou ficar preta. Troque para "Janela sem bordas" nas opções gráficas ou use a aba Telas inteiras.</li>
+                    <li>Janelas minimizadas entram na lista com a última miniatura vista. O Concord não traz a janela para a frente.</li>
+                    <li>Jogo em tela cheia exclusiva minimizado começa em espera e entra sozinho quando você volta para ele com Alt+Tab.</li>
                     <li>Se o jogo roda como administrador, abra o Concord como administrador também.</li>
                     <li>Launchers e anti-cheat podem esconder o título da janela. Nesses casos, compartilhe a tela inteira.</li>
                   </ul>
@@ -289,24 +289,27 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                     onClick={() => setSelectedId(source.id)}
                     className={`overflow-hidden rounded-xl bg-app text-left ring-2 ${active ? 'ring-blurple' : 'ring-transparent hover:ring-line'}`}
                   >
-                    {source.thumbnail && !source.minimized ? (
-                      <img src={source.thumbnail} alt="" className="aspect-video w-full bg-black object-cover" />
-                    ) : (
-                      <div className="flex aspect-video flex-col items-center justify-center gap-2 bg-gradient-to-br from-zinc-800 to-black">
-                        {source.appIcon ? (
-                          <img src={source.appIcon} alt="" className="h-10 w-10" />
-                        ) : tab === 'screen' ? (
-                          <Monitor className="h-10 w-10 text-white/70" aria-hidden="true" />
-                        ) : (
-                          <AppWindow className="h-10 w-10 text-white/70" aria-hidden="true" />
-                        )}
-                        {source.minimized ? (
-                          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/80">Janela minimizada</span>
-                        ) : (
-                          <span className="text-xs text-muted">Sem miniatura</span>
-                        )}
-                      </div>
-                    )}
+                    <span className="relative block">
+                      {source.thumbnail ? (
+                        <img src={source.thumbnail} alt="" className="aspect-video w-full bg-black object-cover" />
+                      ) : (
+                        <span className="flex aspect-video flex-col items-center justify-center gap-2 bg-gradient-to-br from-zinc-800 to-black">
+                          {source.appIcon ? (
+                            <img src={source.appIcon} alt="" className="h-10 w-10" />
+                          ) : tab === 'screen' ? (
+                            <Monitor className="h-10 w-10 text-white/70" aria-hidden="true" />
+                          ) : (
+                            <AppWindow className="h-10 w-10 text-white/70" aria-hidden="true" />
+                          )}
+                          {source.minimized ? null : <span className="text-xs text-muted">Sem miniatura</span>}
+                        </span>
+                      )}
+                      {source.minimized ? (
+                        <span className="absolute bottom-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[11px] font-medium text-white/90">
+                          Janela minimizada
+                        </span>
+                      ) : null}
+                    </span>
                     <span className="flex items-center gap-2 px-2 py-2">
                       {source.appIcon ? (
                         <img src={source.appIcon} alt="" className="h-4 w-4" />
