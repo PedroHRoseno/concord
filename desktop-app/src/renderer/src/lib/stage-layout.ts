@@ -95,3 +95,36 @@ export function clampTile(tile: TileBox, width: number, height: number): TileBox
     y: Math.min(Math.max(0, tile.y), Math.max(0, height - h))
   }
 }
+
+export type ResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
+/**
+ * Redimensiona um quadro arrastando uma borda ou canto, como o Rnd faz nos tiles do palco.
+ * O lado oposto fica parado, o tamanho respeita o mínimo e o quadro nunca sai da área (0,0)-(width,height).
+ */
+export function resizeBox(
+  start: TileBox,
+  edge: ResizeEdge,
+  dx: number,
+  dy: number,
+  width: number,
+  height: number,
+  minW: number,
+  minH: number
+): TileBox {
+  let left = start.x
+  let top = start.y
+  let right = start.x + start.w
+  let bottom = start.y + start.h
+  if (edge.includes('w')) left = Math.min(Math.max(0, left + dx), right - minW)
+  if (edge.includes('e')) right = Math.max(Math.min(width, right + dx), left + minW)
+  if (edge.includes('n')) top = Math.min(Math.max(0, top + dy), bottom - minH)
+  if (edge.includes('s')) bottom = Math.max(Math.min(height, bottom + dy), top + minH)
+  return { x: left, y: top, w: right - left, h: bottom - top }
+}
+
+/** Tamanho inicial da webcam flutuante: cresce com o palco (tela cheia) e nunca fica menor que o antigo 160×90. */
+export function defaultCamSize(stageWidth: number): { w: number; h: number } {
+  const w = Math.min(360, Math.max(160, Math.round(stageWidth * 0.18)))
+  return { w, h: Math.round((w * 9) / 16) }
+}

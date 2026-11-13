@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import {
   Activity,
   Expand,
@@ -13,6 +13,7 @@ import {
   VolumeX
 } from 'lucide-react'
 import { isMobile } from '@renderer/lib/platform'
+import { clampTile, defaultCamSize, resizeBox, type ResizeEdge, type TileBox } from '@renderer/lib/stage-layout'
 import { readStreamStats, type StreamStats } from '@renderer/lib/stats'
 import { Avatar } from '@renderer/components/Avatar'
 import { StatsOverlay } from '@renderer/components/StatsOverlay'
@@ -113,11 +114,40 @@ function FrameVeil({ webcam, name, avatar, accent, peerId }: { webcam: boolean; 
   )
 }
 
-function FloatingCam({ cam, origin }: { cam: FloatCam; origin: { x: number; y: number } }) {
+/** Mínimo e margem da webcam flutuante; a margem de 8 px também deixa livres as alças de resize do tile no modo livre. */
+const CAM_MIN_W = 120
+const CAM_MIN_H = 68
+const CAM_MARGIN = 8
+
+/** As mesmas 8 alças do Rnd nos tiles do palco: 4 bordas e 4 cantos. Os cantos ficam por cima das bordas. */
+const CAM_HANDLES: Array<{ edge: ResizeEdge; className: string }> = [
+  { edge: 'n', className: 'inset-x-4 top-0 h-2 cursor-ns-resize' },
+  { edge: 's', className: 'inset-x-4 bottom-0 h-2 cursor-ns-resize' },
+  { edge: 'w', className: 'inset-y-4 left-0 w-2 cursor-ew-resize' },
+  { edge: 'e', className: 'inset-y-4 right-0 w-2 cursor-ew-resize' },
+  { edge: 'nw', className: 'left-0 top-0 h-4 w-4 cursor-nwse-resize' },
+  { edge: 'ne', className: 'right-0 top-0 h-4 w-4 cursor-nesw-resize' },
+  { edge: 'sw', className: 'bottom-0 left-0 h-4 w-4 cursor-nesw-resize' },
+  { edge: 'se', className: 'bottom-0 right-0 h-4 w-4 cursor-nwse-resize' }
+]
+
+/** Mantém a webcam dentro da área, com a margem, respeitando o tamanho mínimo. */
+function fitCam(box: TileBox, areaW: number, areaH: number): TileBox {
+  const inner = clampTile(
+    { x: box.x - CAM_MARGIN, y: box.y - CAM_MARGIN, w: box.w, h: box.h },
+    Math.max(1, areaW - CAM_MARGIN * 2),
+    Math.max(1, areaH - CAM_MARGIN * 2)
+  )
+  return { x: inner.x + CAM_MARGIN, y: inner.y + CAM_MARGIN, w: inner.w, h: inner.h }
+}
+
+function FloatingCam({ cam, index }: { cam: FloatCam; index: number }) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [pos, setPos] = useState(origin)
+  const [box, setBox] = useState<TileBox>({ x: 12, y: 12 + index * 108, w: 160, h: 90 })
   const [frame, setFrame] = useState(false)
-  const drag = useRef<{ x: number; y: number } | null>(null)
+  const gesture = useRef<{ mode: 'move' | ResizeEdge; px: number; py: number; start: TileBox } | null>(null)
+  const area = useRef({ w: 0, h: 0 })
 
   useEffect(() => {
     const video = videoRef.current
@@ -134,38 +164,109 @@ function FloatingCam({ cam, origin }: { cam: FloatCam; origin: { x: number; y: n
     }
   }, [cam.media])
 
+  // Tamanho inicial proporcional ao palco (em tela cheia deixa de ser um selo de 160 px) e, quando a área muda
+  // (entrar ou sair da tela cheia, redimensionar a janela), a posição acompanha o palco e o tamanho
+  // acompanha o tamanho padrão da webcam para aquele palco.
+  useLayoutEffect(() => {
+    const parent = rootRef.current?.parentElement
+    if (!parent) return
+    const initialW = parent.clientWidth
+    const initialH = parent.clientHeight
+    area.current = { w: initialW, h: initialH }
+    if (initialW > 0 && initialH > 0) {
+      const size = defaultCamSize(initialW)
+      setBox(fitCam({ x: 12, y: 12 + index * (size.h + 8), ...size }, initialW, initialH))
+    }
+    const observer = new ResizeObserver(() => {
+      const w = parent.clientWidth
+      const h = parent.clientHeight
+      const prev = area.current
+      if (w < 1 || h < 1 || (w === prev.w && h === prev.h)) return
+      area.current = { w, h }
+      if (prev.w < 1 || prev.h < 1 || gesture.current) return
+      const kx = w / prev.w
+      const ky = h / prev.h
+      // O tamanho segue o padrão do palco (limitado a 360 px), não a largura crua: escalar por kx
+      // levava a webcam de 160 px num tile a ~935 px em tela cheia, cobrindo quase metade da live.
+      const ks = defaultCamSize(w).w / defaultCamSize(prev.w).w
+      setBox((current) => fitCam({ x: current.x * kx, y: current.y * ky, w: current.w * ks, h: current.h * ks }, w, h))
+    })
+    observer.observe(parent)
+    return () => observer.disconnect()
+  }, [])
+
+  function begin(event: ReactPointerEvent<HTMLElement>, mode: 'move' | ResizeEdge): void {
+    // O palco por trás faz pan e foco com o ponteiro; a webcam não pode deixar o gesto vazar para ele.
+    event.stopPropagation()
+    if (event.button !== 0) return
+    const root = rootRef.current
+    if (!root) return
+    gesture.current = { mode, px: event.clientX, py: event.clientY, start: box }
+    root.setPointerCapture(event.pointerId)
+  }
+
   function move(event: ReactPointerEvent<HTMLDivElement>): void {
-    const current = drag.current
+    const current = gesture.current
     if (!current) return
     const parent = event.currentTarget.parentElement
-    const maxX = Math.max(8, (parent?.clientWidth ?? 160) - 168)
-    const maxY = Math.max(8, (parent?.clientHeight ?? 90) - 98)
-    setPos({
-      x: Math.min(maxX, Math.max(8, event.clientX - current.x)),
-      y: Math.min(maxY, Math.max(8, event.clientY - current.y))
-    })
+    const areaW = parent?.clientWidth ?? area.current.w
+    const areaH = parent?.clientHeight ?? area.current.h
+    const dx = event.clientX - current.px
+    const dy = event.clientY - current.py
+    if (current.mode === 'move') {
+      const maxX = Math.max(CAM_MARGIN, areaW - current.start.w - CAM_MARGIN)
+      const maxY = Math.max(CAM_MARGIN, areaH - current.start.h - CAM_MARGIN)
+      setBox({
+        ...current.start,
+        x: Math.min(maxX, Math.max(CAM_MARGIN, current.start.x + dx)),
+        y: Math.min(maxY, Math.max(CAM_MARGIN, current.start.y + dy))
+      })
+      return
+    }
+    // O resize trabalha na área já descontada da margem, para a webcam nunca encostar nas bordas do palco.
+    const resized = resizeBox(
+      { ...current.start, x: current.start.x - CAM_MARGIN, y: current.start.y - CAM_MARGIN },
+      current.mode,
+      dx,
+      dy,
+      Math.max(1, areaW - CAM_MARGIN * 2),
+      Math.max(1, areaH - CAM_MARGIN * 2),
+      CAM_MIN_W,
+      CAM_MIN_H
+    )
+    setBox({ x: resized.x + CAM_MARGIN, y: resized.y + CAM_MARGIN, w: resized.w, h: resized.h })
+  }
+
+  function end(): void {
+    gesture.current = null
   }
 
   return (
     <div
+      ref={rootRef}
       data-hud
-      className="stage-no-drag absolute z-20 w-40 cursor-grab overflow-hidden rounded-lg bg-black shadow-lg ring-1 ring-white/20 active:cursor-grabbing"
-      style={{ left: pos.x, top: pos.y }}
-      onPointerDown={(event) => {
-        event.stopPropagation()
-        drag.current = { x: event.clientX - pos.x, y: event.clientY - pos.y }
-        event.currentTarget.setPointerCapture(event.pointerId)
-      }}
+      className="stage-no-drag group absolute z-20 touch-none select-none cursor-grab overflow-hidden rounded-lg bg-black shadow-lg ring-1 ring-white/20 transition-shadow hover:ring-white/40 active:cursor-grabbing"
+      style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
+      onPointerDown={(event) => begin(event, 'move')}
       onPointerMove={move}
-      onPointerUp={() => {
-        drag.current = null
-      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onDragStart={(event) => event.preventDefault()}
     >
-      <video ref={videoRef} autoPlay playsInline muted className={`pointer-events-none aspect-video w-full object-cover transition-opacity duration-300 ${frame ? 'opacity-100' : 'opacity-0'}`} />
+      <video ref={videoRef} autoPlay playsInline muted className={`pointer-events-none h-full w-full object-cover transition-opacity duration-300 ${frame ? 'opacity-100' : 'opacity-0'}`} />
       {frame ? null : <FrameVeil webcam name={cam.name} avatar={cam.avatar} accent={cam.accent} peerId={cam.peerId} />}
-      <span className="pointer-events-none absolute bottom-1 left-1 max-w-[9rem] truncate rounded bg-black/70 px-1.5 text-[10px] text-white">
+      <span className="pointer-events-none absolute bottom-1 left-1 max-w-[calc(100%-1.5rem)] truncate rounded bg-black/70 px-1.5 text-[10px] text-white">
         {cam.name}
       </span>
+      <span className="pointer-events-none absolute bottom-1 right-1 h-2.5 w-2.5 border-b-2 border-r-2 border-white/70 opacity-0 transition-opacity group-hover:opacity-100" />
+      {CAM_HANDLES.map((handle) => (
+        <div
+          key={handle.edge}
+          data-hud
+          className={`absolute z-10 ${handle.className}`}
+          onPointerDown={(event) => begin(event, handle.edge)}
+        />
+      ))}
     </div>
   )
 }
@@ -614,7 +715,7 @@ export function VideoStage({
         />
       )}
       {showFloats
-        ? webcams.map((cam, index) => <FloatingCam key={cam.id} cam={cam} origin={{ x: 12, y: 12 + index * 108 }} />)
+        ? webcams.map((cam, index) => <FloatingCam key={cam.id} cam={cam} index={index} />)
         : null}
       {showStats ? <StatsOverlay stats={stats} pending={!stats} facts={facts} /> : null}
       <div

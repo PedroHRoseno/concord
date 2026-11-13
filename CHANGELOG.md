@@ -2,6 +2,12 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [Não lançado]
+
+### Corrigido
+
+- Em tela cheia, a webcam sobreposta à transmissão de tela deixa de ser um selo fixo de 160 px. Ela nasce proporcional ao palco e ganha as mesmas alças de redimensionar dos tiles fora da tela cheia (4 bordas e 4 cantos), com tamanho mínimo e sem sair do palco. Ao entrar ou sair da tela cheia, ou ao redimensionar a janela, a posição acompanha o palco e o tamanho segue o padrão da webcam para aquele palco, com teto de 360 px: ela não passa a cobrir metade da transmissão.
+
 ## [1.10.0] - 2026-11-13
 
 ### Adicionado
