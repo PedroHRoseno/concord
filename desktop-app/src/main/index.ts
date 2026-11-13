@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron'
 import os from 'node:os'
 import { join } from 'path'
 import { registerCapture } from './capture'
@@ -20,6 +20,28 @@ let mainWindow: BrowserWindow | null = null
 let pickerWindow: BrowserWindow | null = null
 let isQuiting = false
 let roomState = { inRoom: false, sharing: false }
+
+const YOUTUBE_REFERER = 'https://com.concord.app/'
+
+/**
+ * O player embutido do YouTube exige um Referer https que identifique o app e responde
+ * com o erro 153 quando ele falta. Em produção o renderer abre de file://, que não envia
+ * Referer, então a faixa era recusada. No `electron-vite dev` o Referer já existe.
+ */
+function identifyToYoutube(): void {
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ['https://*.youtube.com/*', 'https://*.youtube-nocookie.com/*'] },
+    (details, callback) => {
+      const headers = { ...details.requestHeaders }
+      const current = Object.keys(headers).find((name) => name.toLowerCase() === 'referer')
+      if (!current || !/^https?:\/\//i.test(headers[current])) {
+        if (current) delete headers[current]
+        headers.Referer = YOUTUBE_REFERER
+      }
+      callback({ requestHeaders: headers })
+    }
+  )
+}
 
 function appIcon() {
   const icon = nativeImage.createFromPath(resourcePath('icon.png'))
@@ -243,6 +265,7 @@ function registerWindowControls(): void {
 }
 
 app.whenReady().then(() => {
+  identifyToYoutube()
   registerCapture()
   registerAudioLoopback()
   registerDiscord()

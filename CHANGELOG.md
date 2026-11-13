@@ -2,6 +2,13 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [Não lançado]
+
+### Corrigido
+
+- A faixa da Jukebox não some mais logo depois de adicionada. Um erro do player do YouTube deixa de contar como "faixa terminada" e de avançar a fila: o app mostra o motivo e só pula sozinho quando o vídeo em si é o problema (removido, privado ou com embed bloqueado).
+- No Windows, o player do YouTube passa a receber um Referer https do app. O renderer abre de `file://`, que não envia nenhum, e o YouTube recusava a faixa com o erro 153.
+
 ## [1.9.2] - 2026-11-07
 
 ### Corrigido

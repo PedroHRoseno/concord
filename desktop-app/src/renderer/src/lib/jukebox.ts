@@ -35,7 +35,7 @@ interface YTOptions {
   events: {
     onReady?: (event: { target: YTPlayer }) => void
     onStateChange?: (event: { data: number }) => void
-    onError?: () => void
+    onError?: (event: { data: number }) => void
   }
 }
 
@@ -173,6 +173,36 @@ function loadYoutubeApi(): Promise<void> {
   return youtubeApi
 }
 
+const READY_TIMEOUT_MS = 12_000
+
+interface YoutubeFailure {
+  message: string
+  /** Só erro da faixa em si (removida, privada, embed bloqueado) justifica pular. */
+  skip: boolean
+}
+
+/**
+ * Erro do player não é fim de faixa. Pular a fila por erro de ambiente (153, 5) apagaria
+ * todas as músicas, uma por uma, sem o usuário saber o motivo.
+ */
+function describeYoutubeError(code: number): YoutubeFailure {
+  switch (code) {
+    case 2:
+      return { message: 'O YouTube não reconheceu o ID desse vídeo. A faixa será pulada.', skip: true }
+    case 100:
+      return { message: 'Esse vídeo foi removido ou está privado. A faixa será pulada.', skip: true }
+    case 101:
+    case 150:
+      return { message: 'O dono do vídeo não permite tocar fora do YouTube. A faixa será pulada.', skip: true }
+    case 153:
+      return { message: 'O YouTube recusou abrir o player dentro do Concord (erro 153). Quem adicionou a faixa pode pular.', skip: false }
+    case 5:
+      return { message: 'O player do YouTube falhou ao carregar a faixa (erro 5). Quem adicionou a faixa pode pular.', skip: false }
+    default:
+      return { message: `O YouTube não conseguiu tocar essa faixa (erro ${code}). Quem adicionou a faixa pode pular.`, skip: false }
+  }
+}
+
 function playerState(player: YTPlayer): number {
   try {
     return player.getPlayerState()
@@ -189,7 +219,7 @@ function armAutoplayCheck(player: YTPlayer, gen: number, note: (state: number) =
 }
 
 /** Cada cliente toca a faixa no próprio aparelho. `onEnded` só vem do maestro. */
-export function playLocal(videoId: string, startAt: number, onEnded: (() => void) | null): Promise<void> {
+export function playLocal(videoId: string, startAt: number, onEnded: (() => void) | null, onFail?: (message: string) => void): Promise<void> {
   const gen = ++generation
   pendingAlign = null
   clearHost()
@@ -202,7 +232,7 @@ export function playLocal(videoId: string, startAt: number, onEnded: (() => void
   }
   return loadYoutubeApi().then(
     () =>
-      new Promise<void>((resolve, reject) => {
+      new Promise<void>((resolve) => {
         const Factory = window.YT?.Player
         if (gen !== generation || !Factory) {
           resolve()
@@ -220,6 +250,11 @@ export function playLocal(videoId: string, startAt: number, onEnded: (() => void
         const begin = startAt > 0.5 && Number.isFinite(startAt) ? startAt : 0
         let played = false
         let readyForGesture = false
+        let ready = false
+        window.setTimeout(() => {
+          if (ready || gen !== generation) return
+          onFail?.('O player do YouTube não respondeu. Confira a conexão e tente adicionar a faixa de novo.')
+        }, READY_TIMEOUT_MS)
         const note = (state: number) => {
           if (gen !== generation) return
           if (state === YT_PLAYING) {
@@ -250,6 +285,7 @@ export function playLocal(videoId: string, startAt: number, onEnded: (() => void
                 resolve()
                 return
               }
+              ready = true
               applyVolume()
               if (begin > 0) event.target.seekTo(begin, true)
               if (pendingAlign !== null && Math.abs(pendingAlign - begin) > DRIFT_SECONDS) event.target.seekTo(pendingAlign, true)
@@ -262,13 +298,13 @@ export function playLocal(videoId: string, startAt: number, onEnded: (() => void
               resolve()
             },
             onStateChange: (event) => note(event.data),
-            onError: () => {
-              if (gen !== generation) {
-                resolve()
-                return
-              }
-              finish()
-              reject(new Error('O YouTube recusou essa faixa.'))
+            onError: (event) => {
+              ready = true
+              resolve()
+              if (gen !== generation) return
+              const failure = describeYoutubeError(Number(event?.data))
+              onFail?.(failure.message)
+              if (failure.skip) finish()
             }
           }
         })

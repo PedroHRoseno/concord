@@ -169,7 +169,9 @@ export function useRoom() {
     let cancelled = false
     void playLocal(musicCue.videoId, musicCue.currentTime, maestro ? () => {
       if (!cancelled) sessionRef.current?.musicEnded(trackId)
-    } : null).catch((caught) => {
+    } : null, (message) => {
+      if (!cancelled) setError(message)
+    }).catch((caught) => {
       if (!cancelled) setError(caught instanceof Error ? caught.message : 'Não foi possível tocar a música.')
     })
     if (!maestro) {
