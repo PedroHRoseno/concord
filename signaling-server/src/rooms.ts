@@ -515,7 +515,12 @@ export class RoomHub {
   }
 
   private needed(roomId: string): number {
-    return Math.max(1, Math.ceil((this.rooms.get(roomId)?.size ?? 1) * 0.5))
+    // Só conta quem ouve a Jukebox: o celular entra sem `music` e não pode votar.
+    let listeners = 0
+    for (const member of this.rooms.get(roomId)?.values() ?? []) {
+      if (member.features.has('music')) listeners += 1
+    }
+    return Math.max(1, Math.ceil(listeners * 0.5))
   }
 
   private publicMusic(roomId: string): MusicState {

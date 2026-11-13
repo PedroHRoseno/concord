@@ -10,6 +10,7 @@ import {
 } from '@renderer/utils/soundEffects'
 import { applyVideoEncoding, preferOpus, preferVideoCodecs, tuneOpus, tuneOpusVoice } from '@renderer/lib/sdp'
 import { SignalingClient } from '@renderer/lib/signaling'
+import { isMobile } from '@renderer/lib/platform'
 import {
   streamIdFor,
   toStreamMeta,
@@ -176,7 +177,8 @@ export class MeshSession {
         peerId: this.peerId,
         displayName: this.displayName,
         profile: this.profile,
-        features: ['voice', 'chat', 'music'],
+        // O celular fica fora da Jukebox: não recebe a fila, não toca e não conta nos votos.
+        features: isMobile() ? ['voice', 'chat'] : ['voice', 'chat', 'music'],
         unlisted: this.unlisted
       })
       this.socket.send({ type: 'watch-rooms' })

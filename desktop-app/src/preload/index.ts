@@ -102,6 +102,11 @@ const api = {
     return ipcRenderer.invoke('audio-loopback-stop')
   },
   getOsUsername: (): Promise<string> => ipcRenderer.invoke('os:username'),
+  searchMusic: (
+    query: string
+  ): Promise<{ ok: boolean; results: Array<{ videoId: string; title: string; channel: string; duration: string; thumbnail: string }> }> =>
+    ipcRenderer.invoke('music:search', query),
+  setMusicFrameVolume: (level: number): Promise<boolean> => ipcRenderer.invoke('music:frame-volume', level),
   getHotkey: (): Promise<string> => ipcRenderer.invoke('hotkey:get'),
   setHotkey: (accelerator: string): Promise<boolean> => ipcRenderer.invoke('hotkey:set', accelerator),
   getHotkeys: (): Promise<HotkeyMap> => ipcRenderer.invoke('hotkey:get-all'),

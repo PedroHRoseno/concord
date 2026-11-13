@@ -1,7 +1,13 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ListMusic, Music, SkipForward, Volume2, VolumeX, X } from 'lucide-react'
+import { ListMusic, Music, Plus, Search, SkipForward, Volume2, VolumeX, X } from 'lucide-react'
 import type { MusicState } from '@renderer/types'
+
+type MusicSearchResult = Awaited<ReturnType<NonNullable<Window['electronAPI']>['searchMusic']>>['results'][number]
+
+function looksLikeLink(value: string): boolean {
+  return /^https?:\/\//i.test(value) || /^(www\.|m\.)?(youtube\.com|youtu\.be|music\.youtube\.com|open\.spotify\.com)\//i.test(value)
+}
 
 interface MusicDeckProps {
   state: MusicState | null
@@ -29,6 +35,11 @@ function SyncOverlay({ onResume, className }: { onResume: () => void; className:
 export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, onVote, onForce, onVolume, onToggleMute, onResume }: MusicDeckProps) {
   const [queueOpen, setQueueOpen] = useState(false)
   const [draft, setDraft] = useState('')
+  const [results, setResults] = useState<MusicSearchResult[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const searchSeq = useRef(0)
+  const canSearch = Boolean(window.electronAPI?.searchMusic)
   const current = state?.current ?? null
   const queue = state?.queue ?? []
   const votes = state?.votes ?? []
@@ -36,12 +47,46 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
   const owner = current?.addedBy === selfId
   const voted = votes.includes(selfId)
 
+  function closeQueue(): void {
+    setQueueOpen(false)
+    setResults(null)
+    setSearchError('')
+  }
+
+  async function search(query: string): Promise<void> {
+    const seq = ++searchSeq.current
+    setSearching(true)
+    setSearchError('')
+    try {
+      const reply = await window.electronAPI?.searchMusic(query)
+      if (seq !== searchSeq.current) return
+      if (!reply?.ok) {
+        setResults(null)
+        setSearchError('A busca do YouTube não respondeu. Tente de novo ou cole o link.')
+        return
+      }
+      setResults(reply.results)
+    } finally {
+      if (seq === searchSeq.current) setSearching(false)
+    }
+  }
+
   function submit(event: FormEvent): void {
     event.preventDefault()
-    const url = draft.trim()
-    if (!url || busy) return
-    onAdd(url)
+    const value = draft.trim()
+    if (!value || busy) return
+    if (canSearch && !looksLikeLink(value)) {
+      void search(value)
+      return
+    }
+    onAdd(value)
     setDraft('')
+    setResults(null)
+  }
+
+  function pick(result: MusicSearchResult): void {
+    if (busy) return
+    onAdd(`https://www.youtube.com/watch?v=${result.videoId}`)
   }
 
   const card = (
@@ -61,7 +106,7 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-ink">{current ? current.title : 'Nenhuma música na fila'}</p>
             <p className="truncate text-xs text-muted">
-              {current ? `${current.artist || 'YouTube'} · ${current.addedByName}` : 'Cole um link do YouTube ou do Spotify'}
+              {current ? `${current.artist || 'YouTube'} · ${current.addedByName}` : canSearch ? 'Abra a fila para pesquisar uma música' : 'Cole um link do YouTube ou do Spotify'}
             </p>
             {current ? (
               <span className="mt-1 flex h-3 items-end gap-0.5" aria-hidden="true">
@@ -122,7 +167,7 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
               <h2 id="music-queue-title" className="text-base font-semibold text-ink">
                 Fila de reprodução
               </h2>
-              <button type="button" onClick={() => setQueueOpen(false)} className="rounded-lg p-2 text-muted hover:bg-white/10 hover:text-ink" aria-label="Fechar fila">
+              <button type="button" onClick={closeQueue} className="rounded-lg p-2 text-muted hover:bg-white/10 hover:text-ink" aria-label="Fechar fila">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -133,13 +178,55 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
               <input
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="Link do YouTube ou Spotify"
+                placeholder={canSearch ? 'Pesquisar música ou colar link' : 'Link do YouTube ou Spotify'}
+                aria-label={canSearch ? 'Pesquisar música ou colar link' : 'Link do YouTube ou Spotify'}
                 className="h-10 min-w-0 flex-1 rounded-lg bg-app px-3 text-sm text-ink ring-1 ring-line"
               />
-              <button type="submit" disabled={busy || !draft.trim()} className="h-10 rounded-lg bg-blurple px-3 text-sm font-semibold text-white disabled:opacity-40">
-                {busy ? '...' : 'Adicionar'}
+              <button
+                type="submit"
+                disabled={busy || searching || !draft.trim()}
+                className="inline-flex h-10 items-center gap-1 rounded-lg bg-blurple px-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {canSearch && !looksLikeLink(draft.trim()) ? <Search className="h-4 w-4" aria-hidden="true" /> : null}
+                {busy || searching ? '...' : canSearch && !looksLikeLink(draft.trim()) ? 'Buscar' : 'Adicionar'}
               </button>
             </form>
+            {searchError ? <p className="mb-3 text-xs text-red-400">{searchError}</p> : null}
+            {results ? (
+              <div className="mb-3 flex min-h-0 flex-col">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted">Resultados</span>
+                  <button type="button" onClick={() => setResults(null)} className="text-xs text-muted hover:text-ink">
+                    Fechar busca
+                  </button>
+                </div>
+                {results.length === 0 ? (
+                  <p className="text-sm text-muted">Nada encontrado.</p>
+                ) : (
+                  <ul className="max-h-72 space-y-1 overflow-y-auto">
+                    {results.map((result) => (
+                      <li key={result.videoId}>
+                        <button
+                          type="button"
+                          onClick={() => pick(result)}
+                          disabled={busy}
+                          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-white/10 disabled:opacity-50"
+                        >
+                          <img src={result.thumbnail} alt="" className="h-9 w-16 shrink-0 rounded object-cover" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm text-ink">{result.title}</span>
+                            <span className="block truncate text-xs text-muted">
+                              {result.channel} · {result.duration}
+                            </span>
+                          </span>
+                          <Plus className="h-4 w-4 shrink-0 text-muted" aria-label="Adicionar à fila" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
             <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto">
               {current ? (
                 <li className="rounded-xl bg-white/5 px-3 py-2 text-sm">

@@ -2,6 +2,20 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [Não lançado]
+
+### Adicionado
+
+- No desktop, a fila da Jukebox pesquisa músicas por nome, não só por link. A busca sai do próprio computador direto para o YouTube, sem chave de API e sem passar pelo servidor. Colar um link continua funcionando.
+
+### Corrigido
+
+- O volume da Jukebox fica baixo de verdade na ponta de baixo do slider. O player do YouTube travava qualquer volume de 1% a 5% em 5% e às vezes ignorava o volume do app ao começar a faixa. Agora o app ajusta o volume do vídeo direto, em curva quadrática (20% do slider vira 4% de amplitude).
+
+### Removido
+
+- A Jukebox saiu do celular. O app mobile entra na sala sem música, e os votos para pular contam só quem ouve a Jukebox.
+
 ## [1.9.3] - 2026-11-13
 
 ### Corrigido

@@ -30,6 +30,14 @@ export interface QuickShareSettings {
   contentHint: 'motion' | 'detail'
 }
 
+export interface MusicSearchResult {
+  videoId: string
+  title: string
+  channel: string
+  duration: string
+  thumbnail: string
+}
+
 export interface HotkeyMap {
   share: string
   mute: string
@@ -48,6 +56,8 @@ export interface ElectronBridge {
   startAudioLoopback: (sourceId: string) => Promise<{ ok: boolean; isolated: boolean; pid: number | null }>
   stopAudioLoopback: () => Promise<void>
   getOsUsername: () => Promise<string>
+  searchMusic: (query: string) => Promise<{ ok: boolean; results: MusicSearchResult[] }>
+  setMusicFrameVolume: (level: number) => Promise<boolean>
   getHotkey: () => Promise<string>
   setHotkey: (accelerator: string) => Promise<boolean>
   getHotkeys: () => Promise<HotkeyMap>

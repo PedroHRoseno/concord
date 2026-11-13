@@ -77,16 +77,28 @@ function heard(): number {
   return volume
 }
 
+/**
+ * O ouvido é logarítmico e o volume do `<video>` é linear em amplitude, então o slider segue uma
+ * curva quadrática (20% vira 0,04, 10% vira 0,01).
+ */
+function amplitude(level: number): number {
+  return level <= 0 ? 0 : level * level
+}
+
 function applyVolume(): void {
   if (!frame) return
   const level = heard()
+  const target = amplitude(level)
   try {
-    frame.setVolume(Math.round(level * 100))
+    // Reserva para quando o ajuste direto no iframe não existe (build web). O YouTube trava
+    // qualquer valor de 1 a 5 em 5, por isso o ajuste fino vem do processo main.
+    frame.setVolume(target === 0 ? 0 : Math.max(1, Math.round(target * 100)))
     if (level === 0) frame.mute()
     else frame.unMute()
   } catch {
     /* o player ainda está carregando */
   }
+  void window.electronAPI?.setMusicFrameVolume?.(target).catch(() => undefined)
 }
 
 export function readMusicVolume(): number {
@@ -258,6 +270,8 @@ export function playLocal(videoId: string, startAt: number, onEnded: (() => void
         const note = (state: number) => {
           if (gen !== generation) return
           if (state === YT_PLAYING) {
+            // O iframe reaplica o volume salvo do YouTube quando a faixa começa e ignora o do onReady.
+            if (!played) applyVolume()
             played = true
             setGesture(false)
             return

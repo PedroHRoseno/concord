@@ -196,7 +196,7 @@ export function Room({ room }: { room: RoomController }) {
       onSend={room.sendChat}
     />
   ) : null
-  const music = room.self ? (
+  const music = room.self && !isMobile() ? (
     <MusicDeck
       state={room.music}
       selfId={room.self.peerId}

@@ -7,6 +7,7 @@ import { resourcePath } from './paths'
 import { registerAudioLoopback } from './audioLoopback'
 import { registerDiscord } from './discord'
 import { registerUpdates } from './updates'
+import { registerMusic } from './music'
 
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
 app.commandLine.appendSwitch('enable-gpu-rasterization')
@@ -268,6 +269,7 @@ app.whenReady().then(() => {
   identifyToYoutube()
   registerCapture()
   registerAudioLoopback()
+  registerMusic()
   registerDiscord()
   registerUpdates()
   registerWindowControls()
