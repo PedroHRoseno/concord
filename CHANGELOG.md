@@ -2,7 +2,7 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
-## [Não lançado]
+## [1.10.0] - 2026-11-13
 
 ### Adicionado
 
