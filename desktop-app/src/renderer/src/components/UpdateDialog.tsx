@@ -1,6 +1,7 @@
 import { CheckCircle2, Download, Loader2, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import logoFull from '@renderer/assets/logo-full-dark.png'
 import { ReleaseNotes } from '@renderer/components/ReleaseNotes'
 
 export interface UpdateStatus {
@@ -43,13 +44,16 @@ export function UpdateDialog({ status, onClose }: UpdateDialogProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="update-title"
-        className="modal-pop w-full max-w-md rounded-2xl bg-elevated p-4 shadow-2xl ring-1 ring-white/10"
+        className="modal-pop w-full max-w-md rounded-2xl border border-white/[0.07] bg-elevated p-5 shadow-xl shadow-black/40"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
-          <h2 id="update-title" className="text-base font-semibold text-ink">
-            Atualização
-          </h2>
+          <div className="min-w-0">
+            <img src={logoFull} alt="Concord" className="w-24" />
+            <h2 id="update-title" className="mt-3 text-base font-semibold text-ink">
+              Atualização{status?.current ? <span className="ml-2 text-xs font-normal text-muted">versão atual v{status.current}</span> : null}
+            </h2>
+          </div>
           <button type="button" aria-label="Fechar" onClick={onClose} className="rounded-lg p-1 text-muted transition-all duration-200 ease-out hover:bg-app hover:text-ink active:scale-95">
             <X className="h-4 w-4" />
           </button>

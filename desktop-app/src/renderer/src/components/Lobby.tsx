@@ -13,7 +13,8 @@ import {
   Video,
   Volume2
 } from 'lucide-react'
-import logo from '@renderer/assets/logo.png'
+import logo from '@renderer/assets/logo-icon.png'
+import logoFull from '@renderer/assets/logo-full-dark.png'
 import { Avatar } from '@renderer/components/Avatar'
 import { ProfileFields } from '@renderer/components/ProfileFields'
 import { useMobileLayout } from '@renderer/lib/platform'
@@ -196,7 +197,7 @@ export function Lobby({ error, onJoin, onDismissError }: LobbyProps) {
   if (splash && !error) {
     return (
       <main className="flex h-full items-center justify-center bg-app">
-        <img src={logo} alt="" className="h-16 w-16 animate-pulse" />
+        <img src={logoFull} alt="Concord" className="w-56 max-w-[60vw] animate-pulse" />
       </main>
     )
   }

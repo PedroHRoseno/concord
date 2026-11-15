@@ -6,6 +6,7 @@ import { StreamCard, type StageEntry } from '@renderer/components/StreamCard'
 import type { FloatCam } from '@renderer/components/VideoStage'
 import type { DesktopAudioRoute } from '@renderer/lib/audio-loopback'
 import { useMobileLayout } from '@renderer/lib/platform'
+import logoFull from '@renderer/assets/logo-full-dark.png'
 import { clampTile, cornerLayout, equalGrid, placeNew, type TileBox } from '@renderer/lib/stage-layout'
 
 function tileKey(entry: StageEntry): string {
@@ -385,6 +386,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     return (
       <div className="flex h-full min-h-0 items-center justify-center overflow-hidden px-6">
         <div className="edge-glow flex w-full max-w-xl flex-col items-center rounded-2xl border border-accent/15 bg-elevated/90 px-8 py-10 text-center">
+          <img src={logoFull} alt="Concord" className="mb-7 w-32 opacity-90" />
           <div className="flex flex-wrap items-center justify-center gap-3">
             {people.slice(0, 8).map((person) => (
               <span key={person.peerId} className="rounded-full p-0.5 ring-2 ring-accent/30">

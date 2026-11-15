@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import logo from '@renderer/assets/logo.png'
+import logoFull from '@renderer/assets/logo-full-dark.png'
 import { AndroidUpdateNotice } from '@renderer/components/ApkRelease'
 import { Lobby } from '@renderer/components/Lobby'
 import { QuickShare } from '@renderer/components/QuickShare'
@@ -87,7 +87,7 @@ function MainApp() {
       <div className="min-h-0 flex-1">
         {room.phase === 'room' && room.status === 'connecting' ? (
           <div className="flex h-full items-center justify-center bg-app">
-            <img src={logo} alt="" className="h-16 w-16 animate-pulse" />
+            <img src={logoFull} alt="Concord" className="w-56 max-w-[60vw] animate-pulse" />
           </div>
         ) : room.phase === 'lobby' ? (
           <Lobby error={room.error} onJoin={room.join} onDismissError={room.dismissError} />

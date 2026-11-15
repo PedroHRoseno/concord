@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Copy, Minus, Plus, RefreshCw, Square, Volume2, X } from 'lucide-react'
-import logo from '@renderer/assets/logo.png'
+import logo from '@renderer/assets/logo-icon.png'
 import { Avatar } from '@renderer/components/Avatar'
 import { requestSettings } from '@renderer/lib/settings-bus'
 import type { RoomCard } from '@renderer/types'
@@ -165,6 +165,10 @@ export function Titlebar({ roomId, displayName, avatar, accent, peerId, rooms = 
           className="fixed z-[9999] w-80 rounded-2xl border border-white/[0.07] bg-elevated p-2 text-ink shadow-xl shadow-black/40"
           style={{ top: menuPos.top, left: menuPos.left }}
         >
+          <div className="mb-1 flex items-center gap-2 border-b border-white/[0.07] px-2 pb-2 pt-1">
+            <img src={logo} alt="" className="h-5 w-5" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted">Salas do Concord</span>
+          </div>
           <div className="max-h-80 space-y-1 overflow-y-auto">
             {(rooms.length > 0 ? rooms : [{ roomId: roomId ?? 'sala', label: roomId ?? 'sala', members: [], activity: { screens: [], cameras: 0 } }]).map((room) => {
               const current = room.roomId === roomId
@@ -238,7 +242,7 @@ export function Titlebar({ roomId, displayName, avatar, accent, peerId, rooms = 
     <>
     <header className="titlebar-drag flex h-12 shrink-0 items-center border-b border-white/[0.07] bg-panel">
       <div className="flex min-w-0 flex-1 items-center gap-3 pl-3">
-        <img src={logo} alt="" className="h-6 w-6" />
+        <img src={logo} alt="" className="h-7 w-7" />
         <span className="text-sm font-bold tracking-tight text-ink">Concord</span>
         {roomId ? (
           <span className="no-drag relative">
