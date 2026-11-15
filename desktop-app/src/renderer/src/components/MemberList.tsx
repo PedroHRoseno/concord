@@ -57,7 +57,7 @@ function VoiceMenu({ name }: { name: string }) {
           type="checkbox"
           checked={prefs.muted}
           onChange={(event) => setPeerMuted(name, event.target.checked)}
-          className="h-4 w-4 accent-blurple"
+          className="h-4 w-4 accent-accent"
         />
         Mutar usuário
       </label>
@@ -173,8 +173,8 @@ export function MemberList({
     <aside
       className={
         sheet
-          ? 'flex max-h-[78vh] w-full flex-col rounded-t-2xl bg-elevated'
-          : 'relative flex shrink-0 flex-col border-l border-line bg-elevated'
+          ? 'flex max-h-[78vh] w-full flex-col rounded-t-2xl border-t border-white/[0.07] bg-elevated'
+          : 'relative flex shrink-0 flex-col border-l border-white/[0.07] bg-panel'
       }
       style={sheet ? undefined : { width }}
     >
@@ -194,7 +194,7 @@ export function MemberList({
         }}
       />
       )}
-      <div className="flex gap-1 px-3 py-2" role="tablist">
+      <div className="mx-3 my-2 flex gap-1 rounded-full border border-white/[0.07] bg-app/60 p-1" role="tablist">
         {(
           [
             ['room', 'Na Sala'],
@@ -207,7 +207,7 @@ export function MemberList({
             role="tab"
             aria-selected={tab === id}
             onClick={() => onTab(id)}
-            className={`relative inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide transition-colors ${sheet ? 'h-11' : 'h-8'} ${tab === id ? 'bg-app text-ink' : 'text-muted hover:text-ink'}`}
+            className={`relative inline-flex flex-1 items-center justify-center gap-1.5 rounded-full text-xs font-semibold uppercase tracking-wide transition-all duration-200 ${sheet ? 'h-10' : 'h-7'} ${tab === id ? 'bg-accent/15 text-accent' : 'text-muted hover:text-ink'}`}
           >
             {label}
             {id === 'chat' && unread > 0 ? (
@@ -239,7 +239,7 @@ export function MemberList({
               key={person.peerId}
               role="button"
               tabIndex={0}
-              className="group cursor-pointer rounded-lg p-3 transition-all hover:bg-white/[0.06] active:scale-[0.99]"
+              className="group cursor-pointer rounded-xl border border-transparent bg-elevated/60 p-3 transition-all duration-200 hover:border-white/[0.07] hover:bg-elevated active:scale-[0.99]"
               onClick={(event) => {
                 if ((event.target as HTMLElement).closest('button, a, input, label')) return
                 openMenu(person, event.clientX, event.clientY)
@@ -269,8 +269,8 @@ export function MemberList({
                   {person.profile.customStatus ? <p className="truncate text-xs text-muted">{person.profile.customStatus}</p> : null}
                 </span>
                 <span className="flex shrink-0 items-center gap-1">
-                  {screen ? <span className="rounded bg-live/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-live">AO VIVO</span> : null}
-                  {webcam ? <span className="rounded bg-blurple/20 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-blurple">CÂMERA</span> : null}
+                  {screen ? <span className="rounded-full bg-live/15 px-2 py-0.5 text-[10px] font-bold tracking-wide text-live">AO VIVO</span> : null}
+                  {webcam ? <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold tracking-wide text-accent">CÂMERA</span> : null}
                 </span>
               </div>
               {screen ? (
@@ -287,7 +287,7 @@ export function MemberList({
                         if (screen.watching) onUnwatch(screen.meta.streamId)
                         else onWatch(screen.meta.streamId)
                       }}
-                      className={`w-full rounded-lg py-2 text-sm font-medium ${screen.watching ? 'bg-white/10 text-ink hover:bg-white/15' : 'bg-emerald-500/90 text-white hover:bg-emerald-400'}`}
+                      className={`w-full rounded-xl py-2 text-sm font-semibold transition-all duration-200 ${screen.watching ? 'bg-white/10 text-ink hover:bg-white/15' : 'bg-accent text-on-accent hover:bg-accent-strong'}`}
                     >
                       {screen.watching ? '⏹ Deixar Transmissão' : '▶ Assistir Transmissão'}
                     </button>
@@ -313,7 +313,7 @@ export function MemberList({
               {menu?.peerId === person.peerId
                 ? createPortal(
                     <div
-                      className="fixed z-[9999] w-64 rounded-lg bg-[#111214] p-3 text-ink shadow-2xl ring-1 ring-white/10"
+                      className="fixed z-[9999] w-64 rounded-2xl border border-white/[0.07] bg-elevated p-3 text-ink shadow-xl shadow-black/40"
                       style={{ left: menu.x, top: menu.y }}
                       onMouseDown={(event) => event.stopPropagation()}
                     >
@@ -343,7 +343,7 @@ export function MemberList({
                         <button
                           type="button"
                           onClick={() => (screen.watching ? onUnwatch(screen.meta.streamId) : onWatch(screen.meta.streamId))}
-                          className="mt-3 h-8 w-full rounded-md bg-white/10 text-xs font-semibold hover:bg-white/15"
+                          className="mt-3 h-8 w-full rounded-xl bg-white/[0.06] text-xs font-semibold hover:bg-white/15"
                         >
                           {screen.watching ? 'Deixar live' : 'Assistir live'}
                         </button>
@@ -352,7 +352,7 @@ export function MemberList({
                         <button
                           type="button"
                           onClick={() => (webcam.watching ? onUnwatch(webcam.meta.streamId) : onWatch(webcam.meta.streamId))}
-                          className="mt-2 h-8 w-full rounded-md bg-white/10 text-xs font-semibold hover:bg-white/15"
+                          className="mt-2 h-8 w-full rounded-xl bg-white/[0.06] text-xs font-semibold hover:bg-white/15"
                         >
                           {webcam.watching ? 'Ocultar câmera' : 'Ver câmera'}
                         </button>

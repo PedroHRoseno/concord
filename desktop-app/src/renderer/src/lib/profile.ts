@@ -3,11 +3,11 @@ import type { PublicProfile, UserProfile } from '@renderer/types'
 const PROFILE_KEY = 'screenshare.profile'
 const NAME_KEY = 'screenshare.displayName'
 export const AVATAR_LIMIT = 12_000
-export const ACCENT_COLORS = ['#5865F2', '#ED4245', '#57F287', '#FEE75C', '#EB459E', '#F0B232']
+export const ACCENT_COLORS = ['#2DD4BF', '#5865F2', '#ED4245', '#57F287', '#FEE75C', '#EB459E', '#F0B232']
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/
 
 export function emptyProfile(displayName = ''): UserProfile {
-  return { displayName, avatarDataUrl: '', accentColor: '#5865F2', customStatus: '' }
+  return { displayName, avatarDataUrl: '', accentColor: '#2DD4BF', customStatus: '' }
 }
 
 export function sanitizeProfile(value: unknown, displayName = ''): UserProfile {

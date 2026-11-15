@@ -61,7 +61,7 @@ function AppearancePanel() {
             key={step}
             type="button"
             onClick={() => setZoom(window.electronAPI?.setZoomFactor?.(step) ?? step)}
-            className={`h-10 rounded-lg px-4 text-sm font-medium ${Math.abs(zoom - step) < 0.01 ? 'bg-blurple text-white' : 'bg-white/10 text-ink hover:bg-white/15'}`}
+            className={`h-10 rounded-lg px-4 text-sm font-medium ${Math.abs(zoom - step) < 0.01 ? 'bg-accent text-on-accent' : 'bg-white/10 text-ink hover:bg-white/15'}`}
           >
             {Math.round(step * 100)}%
           </button>
@@ -107,7 +107,7 @@ function ProfilePanel({ profile, onSave }: { profile: UserProfile; onSave: (prof
           </span>
         </div>
       </div>
-      <button type="submit" className="mt-5 h-10 rounded-lg bg-blurple px-4 text-sm font-semibold text-white">
+      <button type="submit" className="mt-5 h-10 rounded-lg bg-accent px-4 text-sm font-semibold text-on-accent">
         Salvar perfil
       </button>
     </form>
@@ -159,7 +159,7 @@ function SensitivityBar({
     >
       <div className="absolute inset-x-0 top-1/2 flex h-2 -translate-y-1/2 overflow-hidden rounded-full">
         <div className="h-full bg-amber-400" style={{ width: `${value}%` }} />
-        <div className="h-full flex-1 bg-emerald-500" />
+        <div className="h-full flex-1 bg-accent" />
       </div>
       <div
         className="pointer-events-none absolute top-1/2 h-2 -translate-y-1/2 rounded-l-full bg-white/45"
@@ -289,7 +289,7 @@ function VoicePanel({ voiceLive, onApplyVoice }: { voiceLive: boolean; onApplyVo
         type="button"
         aria-pressed={testing}
         onClick={() => setTesting((current) => !current)}
-        className={`mt-4 h-10 rounded-lg px-3 text-sm font-semibold ${testing ? 'bg-emerald-600 text-white' : 'bg-app text-ink ring-1 ring-line'}`}
+        className={`mt-4 h-10 rounded-lg px-3 text-sm font-semibold ${testing ? 'bg-accent text-on-accent' : 'bg-app text-ink ring-1 ring-line'}`}
       >
         {testing ? 'Parar teste' : 'Testar microfone (ouvir minha voz)'}
       </button>
@@ -338,7 +338,7 @@ function VoicePanel({ voiceLive, onApplyVoice }: { voiceLive: boolean; onApplyVo
             type="button"
             aria-pressed={processing.mode === mode.id}
             onClick={() => void onApplyVoice(mode.id)}
-            className={`h-10 rounded-lg px-3 text-left text-sm ${processing.mode === mode.id ? 'bg-blurple text-white' : 'bg-app text-ink ring-1 ring-line'}`}
+            className={`h-10 rounded-lg px-3 text-left text-sm ${processing.mode === mode.id ? 'bg-accent text-on-accent' : 'bg-app text-ink ring-1 ring-line'}`}
           >
             {mode.label}
           </button>
@@ -355,7 +355,7 @@ function VoicePanel({ voiceLive, onApplyVoice }: { voiceLive: boolean; onApplyVo
             checked={processing.auto}
             disabled={processing.mode === 'off'}
             onChange={(event) => writeAutoSensitivity(event.target.checked)}
-            className="h-4 w-4 accent-blurple"
+            className="h-4 w-4 accent-accent"
           />
         </label>
         <SensitivityBar
@@ -513,7 +513,7 @@ function SoundsPanel() {
             setSoundsOn(next)
             writeSoundEnabled(next)
           }}
-          className="h-4 w-4 accent-blurple"
+          className="h-4 w-4 accent-accent"
         />
       </label>
       <label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-muted">
@@ -553,7 +553,7 @@ function SoundsPanel() {
             setPreviews(event.target.checked)
             writePreviews(event.target.checked)
           }}
-          className="h-4 w-4 accent-blurple"
+          className="h-4 w-4 accent-accent"
         />
       </label>
     </div>
@@ -685,7 +685,7 @@ function AboutPanel() {
             setUpdateOpen(true)
             void window.electronAPI?.checkForUpdates?.()
           }}
-          className="mt-4 h-10 rounded-lg bg-blurple px-4 text-sm font-semibold text-white"
+          className="mt-4 h-10 rounded-lg bg-accent px-4 text-sm font-semibold text-on-accent"
         >
           Verificar atualizações
         </button>
@@ -741,10 +741,10 @@ export function SettingsSheet({ initialSection, profile, voiceLive, onApplyVoice
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4 md:p-8" onClick={onClose}>
       <div
-        className="flex h-[min(820px,92vh)] w-[min(1080px,96vw)] overflow-hidden rounded-xl bg-[#313338] shadow-2xl"
+        className="flex h-[min(820px,92vh)] w-[min(1080px,96vw)] overflow-hidden rounded-2xl border border-white/[0.07] bg-elevated shadow-2xl shadow-black/40"
         onClick={(event) => event.stopPropagation()}
       >
-        <aside className="flex w-56 shrink-0 flex-col bg-[#2b2d31] py-4">
+        <aside className="flex w-56 shrink-0 flex-col bg-panel py-4">
           <p className="px-3 pb-2 text-[11px] font-bold uppercase tracking-wide text-muted">Ajustes do usuário</p>
           <nav className="flex flex-col gap-0.5 px-2">
             {items.map((item) => {
@@ -767,7 +767,7 @@ export function SettingsSheet({ initialSection, profile, voiceLive, onApplyVoice
             })}
           </nav>
         </aside>
-        <div className="relative min-w-0 flex-1 overflow-y-auto bg-[#313338]">
+        <div className="relative min-w-0 flex-1 overflow-y-auto bg-elevated">
           <button
             type="button"
             onClick={onClose}

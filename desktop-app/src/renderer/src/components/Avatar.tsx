@@ -20,7 +20,7 @@ export function Avatar({ name, src, accent = '#5865F2', live = false, size = 'md
   const initial = name.trim().slice(0, 1).toUpperCase() || '?'
   return (
     <span
-      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-panel font-semibold text-ink ${talking ? 'ring-2 ring-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : ''} ${size === 'xs' ? 'h-5 w-5 text-[10px]' : size === 'sm' ? 'h-7 w-7 text-xs' : size === 'lg' ? 'h-16 w-16 text-xl' : 'h-10 w-10 text-sm'}`}
+      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-panel font-semibold text-ink ${talking ? 'ring-2 ring-accent shadow-[0_0_12px_rgba(45,212,191,0.55)]' : ''} ${size === 'xs' ? 'h-5 w-5 text-[10px]' : size === 'sm' ? 'h-7 w-7 text-xs' : size === 'lg' ? 'h-16 w-16 text-xl' : 'h-10 w-10 text-sm'}`}
       style={!talking && live ? { boxShadow: `0 0 0 2px ${color}` } : undefined}
     >
       {src ? <img src={src} alt="" className="h-full w-full object-cover" /> : initial}

@@ -162,7 +162,7 @@ export function Titlebar({ roomId, displayName, avatar, accent, peerId, rooms = 
     ? createPortal(
         <div
           data-room-menu
-          className="fixed z-[9999] w-80 rounded-xl bg-[#111214] p-2 text-ink shadow-2xl ring-1 ring-white/10"
+          className="fixed z-[9999] w-80 rounded-2xl border border-white/[0.07] bg-elevated p-2 text-ink shadow-xl shadow-black/40"
           style={{ top: menuPos.top, left: menuPos.left }}
         >
           <div className="max-h-80 space-y-1 overflow-y-auto">
@@ -177,7 +177,7 @@ export function Titlebar({ roomId, displayName, avatar, accent, peerId, rooms = 
                     setRoomsOpen(false)
                     if (!current) onSwitchRoom?.(room.roomId)
                   }}
-                  className={`flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left ${current ? 'bg-white/10' : 'hover:bg-white/10'}`}
+                  className={`flex w-full items-start gap-2 rounded-xl px-2 py-2 text-left transition-all duration-200 ${current ? 'bg-accent/10 ring-1 ring-accent/25' : 'hover:bg-white/[0.06]'}`}
                 >
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
@@ -215,7 +215,7 @@ export function Titlebar({ roomId, displayName, avatar, accent, peerId, rooms = 
                 autoFocus
                 className="h-9 min-w-0 flex-1 rounded-lg bg-white/5 px-2 text-sm text-ink ring-1 ring-white/10"
               />
-              <button type="submit" className="h-9 rounded-lg bg-blurple px-3 text-sm font-semibold text-white">
+              <button type="submit" className="h-9 rounded-xl bg-accent px-3 text-sm font-semibold text-on-accent">
                 Criar
               </button>
             </form>
@@ -236,19 +236,19 @@ export function Titlebar({ roomId, displayName, avatar, accent, peerId, rooms = 
 
   return (
     <>
-    <header className="titlebar-drag flex h-12 shrink-0 items-center border-b border-line bg-elevated">
+    <header className="titlebar-drag flex h-12 shrink-0 items-center border-b border-white/[0.07] bg-panel">
       <div className="flex min-w-0 flex-1 items-center gap-3 pl-3">
         <img src={logo} alt="" className="h-6 w-6" />
-        <span className="text-sm font-semibold text-ink">Concord</span>
+        <span className="text-sm font-bold tracking-tight text-ink">Concord</span>
         {roomId ? (
           <span className="no-drag relative">
             <button
               ref={roomButtonRef}
               type="button"
               onClick={openRooms}
-              className="no-drag inline-flex max-w-64 cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-ink hover:bg-white/10"
+              className="no-drag inline-flex max-w-64 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-1.5 text-sm font-semibold text-ink transition-all duration-200 hover:bg-white/[0.12]"
             >
-              <Volume2 className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+              <Volume2 className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
               <span className="truncate">{rooms.find((room) => room.roomId === roomId)?.label ?? roomId}</span>
               <ChevronDown className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
             </button>
@@ -266,10 +266,10 @@ export function Titlebar({ roomId, displayName, avatar, accent, peerId, rooms = 
               if (!pending) void window.electronAPI?.checkForUpdates?.()
             }}
             title={pending ? 'Há uma atualização do Concord' : 'Procurar uma nova versão do Concord'}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition-all duration-200 active:scale-95 ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-xl border px-3 text-xs font-medium transition-all duration-200 active:scale-95 ${
               pending
                 ? 'border-live/60 bg-live/15 text-ink hover:bg-live/25'
-                : 'border-white/10 bg-white/5 text-muted hover:border-white/20 hover:bg-white/10 hover:text-ink'
+                : 'border-white/10 bg-white/[0.06] text-muted hover:border-white/20 hover:bg-white/[0.12] hover:text-ink'
             }`}
           >
             {pending ? (
@@ -288,7 +288,7 @@ export function Titlebar({ roomId, displayName, avatar, accent, peerId, rooms = 
           <button
             type="button"
             onClick={() => requestSettings('profile')}
-            className="inline-flex max-w-44 items-center gap-1.5 rounded-full px-2.5 py-1 text-sm text-ink hover:bg-white/10"
+            className="inline-flex max-w-44 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] py-1 pl-1 pr-3 text-sm font-medium text-ink transition-all duration-200 hover:bg-white/[0.12]"
           >
             <Avatar name={displayName} src={avatar} accent={accent} peerId={peerId} size="xs" />
             <span className="truncate">{displayName}</span>

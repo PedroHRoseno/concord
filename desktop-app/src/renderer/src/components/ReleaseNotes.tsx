@@ -72,7 +72,7 @@ function render(node: Node, key: string): ReactNode {
       )
     case 'a':
       return (
-        <span key={key} className="text-blurple underline">
+        <span key={key} className="text-accent underline">
           {children}
         </span>
       )

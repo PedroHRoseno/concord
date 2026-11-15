@@ -384,22 +384,24 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
     const count = people.length
     return (
       <div className="flex h-full min-h-0 items-center justify-center overflow-hidden px-6">
-        <div className="flex w-full max-w-xl flex-col items-center rounded-3xl border border-white/10 bg-white/[0.04] px-8 py-10 text-center shadow-2xl">
+        <div className="edge-glow flex w-full max-w-xl flex-col items-center rounded-2xl border border-accent/15 bg-elevated/90 px-8 py-10 text-center">
           <div className="flex flex-wrap items-center justify-center gap-3">
             {people.slice(0, 8).map((person) => (
-              <Avatar key={person.peerId} name={person.name} src={person.avatar} accent={person.accent} peerId={person.peerId} size="lg" />
+              <span key={person.peerId} className="rounded-full p-0.5 ring-2 ring-accent/30">
+                <Avatar name={person.name} src={person.avatar} accent={person.accent} peerId={person.peerId} size="lg" />
+              </span>
             ))}
           </div>
-          <h2 className="mt-6 text-xl font-bold text-ink">Sala {roomLabel}</h2>
+          <h2 className="mt-6 text-2xl font-bold tracking-tight text-ink">{roomLabel}</h2>
           <p className="mt-2 text-sm text-muted">
             {count === 1 ? 'Você está na call.' : `${count} amigos estão na call.`}
           </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             {canShare ? (
               <button
                 type="button"
                 onClick={onShare}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-blurple px-4 text-sm font-semibold text-white hover:bg-[#4752c4]"
+                className="inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-5 text-sm font-bold text-on-accent shadow-xl shadow-accent/20 transition-all duration-200 hover:bg-accent-strong active:scale-95"
               >
                 <MonitorUp className="h-5 w-5" aria-hidden="true" />
                 Compartilhar minha tela
@@ -408,7 +410,7 @@ export const Stage = forwardRef<StageHandle, StageProps>(function Stage(
             <button
               type="button"
               onClick={onCamera}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-ink hover:bg-white/15"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-5 text-sm font-semibold text-ink transition-all duration-200 hover:bg-white/[0.12] active:scale-95"
             >
               <Video className="h-5 w-5" aria-hidden="true" />
               Ligar minha câmera

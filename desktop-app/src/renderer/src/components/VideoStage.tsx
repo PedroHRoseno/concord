@@ -102,13 +102,13 @@ function factLines(details: StreamDetails | null): Array<{ label: string; value:
 function FrameVeil({ webcam, name, avatar, accent, peerId }: { webcam: boolean; name: string; avatar?: string; accent?: string; peerId?: string }) {
   if (webcam) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
+      <div className="absolute inset-0 flex items-center justify-center bg-elevated">
         <Avatar name={name} src={avatar} accent={accent} peerId={peerId} size="md" />
       </div>
     )
   }
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/80 text-sm text-white/80 backdrop-blur-sm">
+    <div className="absolute inset-0 flex items-center justify-center bg-app/80 text-sm text-white/80 backdrop-blur-sm">
       Sincronizando
     </div>
   )
@@ -722,7 +722,7 @@ export function VideoStage({
         data-hud
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
-        className={`stage-no-drag absolute inset-x-3 bottom-4 z-30 flex w-fit max-w-[calc(100%-1.5rem)] items-center gap-1 rounded-xl border border-white/10 bg-zinc-950/85 px-3 py-1.5 shadow-lg backdrop-blur-md transition-opacity duration-200 ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+        className={`stage-no-drag absolute inset-x-3 bottom-4 z-30 flex w-fit max-w-[calc(100%-1.5rem)] items-center gap-1 rounded-xl border border-white/10 bg-app/85 px-3 py-1.5 shadow-lg backdrop-blur-md transition-opacity duration-200 ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
       >
         <button
           type="button"
@@ -792,7 +792,7 @@ export function VideoStage({
             HD
           </button>
           {infoVisible && facts.length > 0 ? (
-            <div className="absolute bottom-full left-0 z-30 mb-2 w-60 rounded-lg border border-white/10 bg-zinc-950/95 p-2 text-[11px] leading-4 text-ink shadow-lg backdrop-blur-md">
+            <div className="absolute bottom-full left-0 z-30 mb-2 w-60 rounded-lg border border-white/10 bg-app/95 p-2 text-[11px] leading-4 text-ink shadow-lg backdrop-blur-md">
               {facts.map((fact) => (
                 <p key={fact.label} className="flex justify-between gap-3">
                   <span className="text-muted">{fact.label}</span>
@@ -808,7 +808,7 @@ export function VideoStage({
           aria-label="Estatísticas e detalhes"
           aria-pressed={showStats}
           onClick={() => setShowStats((value) => !value)}
-          className={`rounded-md p-1.5 hover:bg-white/10 ${showStats ? 'text-blurple' : 'text-ink'}`}
+          className={`rounded-md p-1.5 hover:bg-white/10 ${showStats ? 'text-accent' : 'text-ink'}`}
         >
           <Activity className="h-4 w-4" />
         </button>

@@ -83,7 +83,7 @@ export function UpdateDialog({ status, onClose }: UpdateDialogProps) {
               <button
                 type="button"
                 onClick={() => window.electronAPI?.startDownload?.()}
-                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-blurple text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95"
+                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-accent text-sm font-semibold text-on-accent transition-all duration-200 ease-out hover:bg-accent-strong active:scale-95"
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Baixar
@@ -103,7 +103,7 @@ export function UpdateDialog({ status, onClose }: UpdateDialogProps) {
           <button
             type="button"
             onClick={() => void window.electronAPI?.checkForUpdates?.()}
-            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-blurple text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95"
+            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-accent text-sm font-semibold text-on-accent transition-all duration-200 ease-out hover:bg-accent-strong active:scale-95"
           >
             Tentar de novo
           </button>
@@ -113,7 +113,7 @@ export function UpdateDialog({ status, onClose }: UpdateDialogProps) {
           <div className="mt-4">
             <p className="text-sm text-ink">Baixando atualização... {Math.round(percent)}%</p>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-app">
-              <div className="h-full rounded-full bg-blurple transition-all duration-200 ease-out" style={{ width: `${percent}%` }} />
+              <div className="h-full rounded-full bg-accent transition-all duration-200 ease-out" style={{ width: `${percent}%` }} />
             </div>
             <p className="mt-2 text-xs text-muted">
               {megabytes(status?.bytesPerSecond)}/s · {megabytes(status?.transferred)} de {megabytes(status?.total)}

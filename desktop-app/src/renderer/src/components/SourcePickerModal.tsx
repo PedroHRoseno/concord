@@ -228,7 +228,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder={tab === 'screen' ? 'Buscar tela' : 'Buscar janela ou jogo'}
                     aria-label="Buscar"
-                    className="h-9 w-full rounded-lg bg-app pl-9 pr-3 text-sm text-ink outline-none ring-1 ring-line focus:ring-blurple"
+                    className="h-9 w-full rounded-lg bg-app pl-9 pr-3 text-sm text-ink outline-none ring-1 ring-line focus:ring-accent"
                   />
                 </label>
                 <span className="shrink-0 text-xs text-muted">
@@ -287,13 +287,13 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
                     key={source.id}
                     type="button"
                     onClick={() => setSelectedId(source.id)}
-                    className={`overflow-hidden rounded-xl bg-app text-left ring-2 ${active ? 'ring-blurple' : 'ring-transparent hover:ring-line'}`}
+                    className={`overflow-hidden rounded-xl bg-app text-left ring-2 ${active ? 'ring-accent' : 'ring-transparent hover:ring-line'}`}
                   >
                     <span className="relative block">
                       {source.thumbnail ? (
                         <img src={source.thumbnail} alt="" className="aspect-video w-full bg-black object-cover" />
                       ) : (
-                        <span className="flex aspect-video flex-col items-center justify-center gap-2 bg-gradient-to-br from-zinc-800 to-black">
+                        <span className="flex aspect-video flex-col items-center justify-center gap-2 bg-gradient-to-br from-surface to-app">
                           {source.appIcon ? (
                             <img src={source.appIcon} alt="" className="h-10 w-10" />
                           ) : tab === 'screen' ? (
@@ -442,7 +442,7 @@ export function SourcePickerModal({ mode, embedded = false, onClose, onConfirm, 
               type="button"
               disabled={!selected}
               onClick={confirm}
-              className="h-10 rounded-lg bg-blurple px-4 text-sm font-semibold text-white transition-all duration-200 ease-out hover:bg-[#4752c4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+              className="h-10 rounded-lg bg-accent px-4 text-sm font-semibold text-on-accent transition-all duration-200 ease-out hover:bg-accent-strong active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {mode === 'swap' ? 'Trocar' : 'Transmitir'}
             </button>

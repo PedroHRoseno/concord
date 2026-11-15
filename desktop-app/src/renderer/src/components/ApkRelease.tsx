@@ -72,7 +72,7 @@ export function DownloadApkButton() {
     <button
       type="button"
       onClick={() => openLink(release.url)}
-      className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-muted hover:bg-white/10 hover:text-ink"
+      className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.06] px-3 text-xs font-medium text-muted transition-all duration-200 hover:bg-white/[0.12] hover:text-ink"
     >
       <Smartphone className="h-3.5 w-3.5" aria-hidden="true" />
       APK Android
@@ -85,7 +85,7 @@ export function AndroidUpdateNotice() {
   const current = import.meta.env.VITE_APP_VERSION ?? ''
   if (!isCapacitor() || !release || !current || compareVersions(release.version, current) <= 0) return null
   return (
-    <p className="bg-blurple/15 px-4 py-2 text-sm text-ink" role="status">
+    <p className="bg-accent/15 px-4 py-2 text-sm text-ink" role="status">
       Nova versão disponível ({release.version}).
       <button type="button" onClick={() => openLink(release.url)} className="ml-2 font-semibold underline">
         Baixar

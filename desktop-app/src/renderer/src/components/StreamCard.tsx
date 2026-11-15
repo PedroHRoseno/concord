@@ -140,7 +140,7 @@ export function StreamCard({
             {poster ? (
               <img src={poster} alt="" className="absolute inset-0 h-full w-full scale-105 object-cover blur-md brightness-50" />
             ) : (
-              <div className="absolute inset-0" style={{ background: `linear-gradient(160deg, ${accent} 0%, #09090b 70%)` }}>
+              <div className="absolute inset-0" style={{ background: `linear-gradient(160deg, ${accent} 0%, #0b0f17 70%)` }}>
                 <div className="absolute inset-0 flex items-center justify-center opacity-40 blur-md">
                   <Avatar name={entry.name} src={entry.avatarDataUrl} accent={accent} peerId={entry.peerId} size="lg" />
                 </div>
@@ -150,7 +150,7 @@ export function StreamCard({
               <button
                 type="button"
                 onClick={onWatch}
-                className="stage-no-drag inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-zinc-950 shadow-2xl hover:bg-zinc-100"
+                className="stage-no-drag inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-on-accent shadow-2xl shadow-black/40 transition-all duration-200 hover:bg-accent-strong"
               >
                 <Play className="h-5 w-5 fill-current" aria-hidden="true" />
                 Assistir Transmissão
@@ -166,7 +166,7 @@ export function StreamCard({
             {poster ? (
               <img src={poster} alt="" className="absolute inset-0 h-full w-full scale-105 object-cover blur-md brightness-50" />
             ) : (
-              <div className="absolute inset-0" style={{ background: `linear-gradient(160deg, ${accent} 0%, #09090b 72%)` }} />
+              <div className="absolute inset-0" style={{ background: `linear-gradient(160deg, ${accent} 0%, #0b0f17 72%)` }} />
             )}
             <div className="relative flex h-full items-center justify-center px-6 text-center text-sm font-medium text-white">
               Reconectando transmissão de {entry.name}...
@@ -186,23 +186,23 @@ export function StreamCard({
       <div
         className={`stage-drag absolute inset-x-0 top-0 z-30 flex cursor-grab items-start gap-2 px-2.5 pt-2 text-ink transition-opacity duration-200 active:cursor-grabbing ${chrome ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
       >
-        <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 shadow-md backdrop-blur-md">
+        <span className="inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-white/10 bg-app/80 px-2.5 py-1 shadow-md backdrop-blur-md">
           <GripHorizontal className="h-4 w-4 shrink-0 text-white/80" aria-hidden="true" />
           <Avatar name={entry.name} src={entry.avatarDataUrl} accent={entry.accentColor} live size="sm" peerId={entry.peerId} />
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{label}</h2>
         </span>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-live shadow-md backdrop-blur-md">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-app/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-live shadow-md backdrop-blur-md">
           <span className="h-1.5 w-1.5 rounded-full bg-live" aria-hidden="true" />
           Ao vivo
         </span>
         <span
-          className="group relative inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-zinc-950/80 px-2.5 py-1 text-xs text-white shadow-md backdrop-blur-md"
+          className="group relative inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-app/80 px-2.5 py-1 text-xs text-white shadow-md backdrop-blur-md"
           title={entry.watchers.length === 0 ? 'Ninguém assistindo' : watcherNames}
         >
           <Eye className="h-3.5 w-3.5" aria-hidden="true" />
           {entry.watchers.length}
           {entry.watchers.length > 0 ? (
-            <span className="pointer-events-none absolute right-0 top-full z-40 mt-1 hidden w-52 rounded-lg border border-white/10 bg-zinc-950/95 p-2 text-left shadow-md group-hover:block">
+            <span className="pointer-events-none absolute right-0 top-full z-40 mt-1 hidden w-52 rounded-lg border border-white/10 bg-app/95 p-2 text-left shadow-md group-hover:block">
               {entry.watchers.map((watcher) => (
                 <span key={watcher.peerId} className="flex items-center gap-2 py-1">
                   <Avatar name={watcher.displayName} src={watcher.avatarDataUrl} accent={watcher.accentColor} size="sm" />

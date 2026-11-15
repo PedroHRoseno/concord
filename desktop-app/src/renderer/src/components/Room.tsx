@@ -248,7 +248,7 @@ export function Room({ room }: { room: RoomController }) {
         </p>
       ) : null}
       {room.isolateAudio ? (
-        <p className="bg-blurple/15 px-4 py-2 text-sm text-ink" role="status">
+        <p className="bg-accent/15 px-4 py-2 text-sm text-ink" role="status">
           As outras transmissões estão mudas enquanto o áudio do sistema está no ar, para a voz delas não voltar na captura.
         </p>
       ) : null}
@@ -260,12 +260,12 @@ export function Room({ room }: { room: RoomController }) {
           </button>
         </div>
       ) : null}
-      <div className={`room-chrome flex shrink-0 items-center gap-2 border-b border-line px-3 ${mobile ? 'min-h-12 py-1' : 'h-12'}`}>
-        <div className="flex gap-0.5 rounded-lg bg-panel p-0.5 ring-1 ring-white/10">
+      <div className={`room-chrome flex shrink-0 items-center gap-2 border-b border-white/[0.07] bg-panel/60 px-3 ${mobile ? 'min-h-12 py-1' : 'h-12'}`}>
+        <div className="flex gap-0.5 rounded-full border border-white/[0.07] bg-elevated p-1">
           <button
             type="button"
             onClick={() => setLayout('grid')}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 text-sm font-medium ${mobile ? 'h-11' : 'h-9'} ${layout === 'grid' ? 'bg-blurple text-white' : 'text-muted'}`}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold transition-all duration-200 ${mobile ? 'h-10' : 'h-8'} ${layout === 'grid' ? 'bg-accent text-on-accent shadow-md shadow-accent/20' : 'text-muted hover:bg-white/[0.06] hover:text-ink'}`}
           >
             <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
             Grade
@@ -273,7 +273,7 @@ export function Room({ room }: { room: RoomController }) {
           <button
             type="button"
             onClick={() => setLayout('focus')}
-            className={`inline-flex items-center gap-1.5 rounded-md px-3 text-sm font-medium ${mobile ? 'h-11' : 'h-9'} ${layout === 'focus' ? 'bg-blurple text-white' : 'text-muted'}`}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold transition-all duration-200 ${mobile ? 'h-10' : 'h-8'} ${layout === 'focus' ? 'bg-accent text-on-accent shadow-md shadow-accent/20' : 'text-muted hover:bg-white/[0.06] hover:text-ink'}`}
           >
             <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
             Foco
@@ -290,7 +290,7 @@ export function Room({ room }: { room: RoomController }) {
                     disabled={entries.length === 0}
                     onClick={() => stageRef.current?.organize('grid')}
                     title="Auto-organizar"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted transition-all duration-200 hover:bg-white/[0.06] hover:text-ink disabled:opacity-40"
                   >
                     <WandSparkles className="h-3.5 w-3.5" aria-hidden="true" />
                     Auto-organizar
@@ -300,7 +300,7 @@ export function Room({ room }: { room: RoomController }) {
                     disabled={entries.length === 0}
                     onClick={() => stageRef.current?.organize('grid')}
                     title="Lado a Lado"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted transition-all duration-200 hover:bg-white/[0.06] hover:text-ink disabled:opacity-40"
                   >
                     <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
                     Lado a Lado
@@ -310,7 +310,7 @@ export function Room({ room }: { room: RoomController }) {
                     disabled={!hasScreen || !hasWebcam}
                     onClick={() => stageRef.current?.organize('corner')}
                     title="Destaque + Canto"
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted hover:bg-panel hover:text-ink disabled:opacity-40"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-muted transition-all duration-200 hover:bg-white/[0.06] hover:text-ink disabled:opacity-40"
                   >
                     <PictureInPicture className="h-3.5 w-3.5" aria-hidden="true" />
                     Destaque + Canto
@@ -334,7 +334,7 @@ export function Room({ room }: { room: RoomController }) {
                       setCameraRail(id)
                       writeCameraRail(id)
                     }}
-                    className={`inline-flex h-9 w-9 items-center justify-center rounded-md ${cameraRail === id ? 'bg-blurple text-white' : 'text-muted hover:text-ink'}`}
+                    className={`inline-flex h-9 w-9 items-center justify-center rounded-xl transition-all duration-200 ${cameraRail === id ? 'bg-accent/15 text-accent ring-1 ring-accent/30' : 'text-muted hover:bg-white/[0.06] hover:text-ink'}`}
                   >
                     <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
@@ -348,7 +348,7 @@ export function Room({ room }: { room: RoomController }) {
           onClick={() => setSidebarOpen((open) => !open)}
           aria-pressed={sidebarOpen}
           title={sidebarOpen ? 'Recolher a lista da sala' : 'Mostrar a lista da sala'}
-          className={`relative inline-flex items-center gap-1.5 rounded-lg px-3 text-sm text-muted hover:bg-panel hover:text-ink ${mobile ? 'h-11' : 'h-9'}`}
+          className={`relative inline-flex items-center gap-1.5 rounded-xl px-3 text-sm text-muted transition-all duration-200 hover:bg-white/[0.06] hover:text-ink ${mobile ? 'h-11' : 'h-9'}`}
         >
           {sidebarOpen ? <PanelRightClose className="h-4 w-4" aria-hidden="true" /> : <PanelRight className="h-4 w-4" aria-hidden="true" />}
           <span>{peopleCount}</span>

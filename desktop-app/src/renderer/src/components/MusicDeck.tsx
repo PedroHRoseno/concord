@@ -90,16 +90,16 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
   }
 
   const card = (
-    <section aria-label="Jukebox" className="relative w-full shrink-0 border-b border-line px-3 py-3">
+    <section aria-label="Jukebox" className="relative mx-3 mb-2 shrink-0 overflow-hidden rounded-2xl border border-white/[0.07] bg-elevated px-3 py-3 shadow-xl shadow-black/30">
       {blocked && current ? (
-        <SyncOverlay onResume={onResume} className="absolute inset-0 z-10 flex items-center justify-center bg-blurple px-3 text-center text-xs font-semibold leading-snug text-white" />
+        <SyncOverlay onResume={onResume} className="absolute inset-0 z-10 flex items-center justify-center bg-accent px-3 text-center text-xs font-semibold leading-snug text-on-accent" />
       ) : null}
       <div inert={blocked && current ? true : undefined}>
         <div className="flex items-start gap-2">
           {current?.artwork ? (
-            <img src={current.artwork} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+            <img src={current.artwork} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" />
           ) : (
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/5 text-muted">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
               <Music className="h-5 w-5" aria-hidden="true" />
             </span>
           )}
@@ -113,7 +113,7 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
                 {[0, 1, 2, 3].map((bar) => (
                   <span
                     key={bar}
-                    className="w-0.5 animate-pulse rounded-full bg-blurple"
+                    className="w-0.5 animate-pulse rounded-full bg-accent"
                     style={{ height: `${8 + ((bar * 3) % 5)}px`, animationDelay: `${bar * 120}ms` }}
                   />
                 ))}
@@ -127,7 +127,7 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
               type="button"
               onClick={owner ? onForce : onVote}
               disabled={!owner && voted}
-              className="inline-flex h-9 min-w-0 items-center gap-1 rounded-lg bg-white/10 px-2.5 text-xs font-semibold text-ink hover:bg-white/15 disabled:opacity-50"
+              className="inline-flex h-9 min-w-0 items-center gap-1 rounded-xl bg-white/[0.06] px-2.5 text-xs font-semibold text-ink ring-1 ring-white/10 transition-all duration-200 hover:bg-white/[0.12] disabled:opacity-50"
             >
               <SkipForward className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{owner ? 'Pular' : voted ? 'Voto enviado' : `Pular ${votes.length}/${needed}`}</span>
@@ -144,12 +144,12 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
             max={100}
             value={Math.round(volume * 100)}
             onChange={(event) => onVolume(Number(event.target.value) / 100)}
-            className="h-9 min-w-16 flex-1 basis-16 accent-blurple"
+            className="h-9 min-w-16 flex-1 basis-16 accent-accent"
           />
           <button
             type="button"
             onClick={() => setQueueOpen(true)}
-            className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg bg-white/10 px-2.5 text-xs font-semibold text-ink hover:bg-white/15"
+            className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl bg-white/[0.06] px-2.5 text-xs font-semibold text-ink ring-1 ring-white/10 transition-all duration-200 hover:bg-white/[0.12]"
           >
             <ListMusic className="h-3.5 w-3.5" aria-hidden="true" />
             Fila{queue.length > 0 ? ` ${queue.length}` : ''}
@@ -162,7 +162,7 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
   const queueModal = queueOpen
     ? createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 p-4" role="presentation">
-          <div role="dialog" aria-modal="true" aria-labelledby="music-queue-title" className="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl bg-elevated p-4 ring-1 ring-line">
+          <div role="dialog" aria-modal="true" aria-labelledby="music-queue-title" className="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl border border-white/[0.07] bg-elevated p-4 shadow-xl shadow-black/40">
             <div className="mb-3 flex items-center justify-between">
               <h2 id="music-queue-title" className="text-base font-semibold text-ink">
                 Fila de reprodução
@@ -172,7 +172,7 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
               </button>
             </div>
             {blocked && current ? (
-              <SyncOverlay onResume={onResume} className="mb-3 flex h-12 w-full items-center justify-center rounded-xl bg-blurple px-4 text-center text-sm font-semibold text-white" />
+              <SyncOverlay onResume={onResume} className="mb-3 flex h-12 w-full items-center justify-center rounded-xl bg-accent px-4 text-center text-sm font-semibold text-on-accent" />
             ) : null}
             <form onSubmit={submit} className="mb-3 flex gap-2">
               <input
@@ -185,13 +185,13 @@ export function MusicDeck({ state, selfId, busy, blocked, volume, muted, onAdd, 
               <button
                 type="submit"
                 disabled={busy || searching || !draft.trim()}
-                className="inline-flex h-10 items-center gap-1 rounded-lg bg-blurple px-3 text-sm font-semibold text-white disabled:opacity-40"
+                className="inline-flex h-10 items-center gap-1 rounded-lg bg-accent px-3 text-sm font-semibold text-on-accent disabled:opacity-40"
               >
                 {canSearch && !looksLikeLink(draft.trim()) ? <Search className="h-4 w-4" aria-hidden="true" /> : null}
                 {busy || searching ? '...' : canSearch && !looksLikeLink(draft.trim()) ? 'Buscar' : 'Adicionar'}
               </button>
             </form>
-            {searchError ? <p className="mb-3 text-xs text-red-400">{searchError}</p> : null}
+            {searchError ? <p className="mb-3 text-xs text-danger">{searchError}</p> : null}
             {results ? (
               <div className="mb-3 flex min-h-0 flex-col">
                 <div className="mb-2 flex items-center justify-between">

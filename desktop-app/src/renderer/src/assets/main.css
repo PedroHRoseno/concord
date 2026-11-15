@@ -1,15 +1,18 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-app: #1e1f22;
-  --color-panel: #2b2d31;
-  --color-elevated: #313338;
-  --color-blurple: #5865f2;
-  --color-live: #23a55a;
-  --color-ink: #f2f3f5;
-  --color-muted: #b5bac1;
-  --color-danger: #da373c;
-  --color-line: #3f4147;
+  --color-app: #0b0f17;
+  --color-panel: #111621;
+  --color-elevated: #131924;
+  --color-surface: #161d2b;
+  --color-accent: #2dd4bf;
+  --color-accent-strong: #5eead4;
+  --color-on-accent: #081018;
+  --color-live: #34d399;
+  --color-ink: #e6edf5;
+  --color-muted: #8f9bb0;
+  --color-danger: #ef4444;
+  --color-line: #1f2736;
   --color-warn: #f0b232;
 }
 
@@ -23,8 +26,8 @@ body {
   box-sizing: border-box;
   margin: 0;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  background: #1e1f22;
-  color: #f2f3f5;
+  background: #0b0f17;
+  color: #e6edf5;
   font-family: 'Segoe UI', Inter, system-ui, sans-serif;
 }
 
@@ -38,7 +41,7 @@ body {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #3f4147 transparent;
+  scrollbar-color: #263042 transparent;
 }
 
 ::-webkit-scrollbar {
@@ -51,7 +54,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f4147;
+  background: #263042;
   border-radius: 999px;
 }
 
@@ -75,7 +78,7 @@ input[type='range'] {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 2px solid #5865f2;
+  outline: 2px solid #2dd4bf;
   outline-offset: 2px;
 }
 
@@ -88,7 +91,7 @@ select:focus-visible {
 }
 
 input[type='range'] {
-  accent-color: #5865f2;
+  accent-color: #2dd4bf;
 }
 
 summary::-webkit-details-marker {
@@ -101,7 +104,7 @@ summary::-webkit-details-marker {
 }
 
 .stage-tile:hover {
-  outline: 1px solid rgba(255, 255, 255, 0.16);
+  outline: 1px solid rgba(45, 212, 191, 0.28);
   outline-offset: -1px;
 }
 
@@ -166,4 +169,19 @@ body.live-fullscreen .titlebar-drag {
 
 .dock-rise {
   animation: concord-rise 200ms ease-out;
+}
+
+.hero-glow {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(45, 212, 191, 0.22), transparent 55%),
+    radial-gradient(90% 120% at 100% 100%, rgba(34, 211, 238, 0.14), transparent 60%),
+    linear-gradient(135deg, #0f2a33 0%, #131924 55%, #111621 100%);
+}
+
+.edge-glow {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(45, 212, 191, 0.14),
+    0 24px 60px -20px rgba(45, 212, 191, 0.18),
+    0 20px 40px rgba(0, 0, 0, 0.4);
 }

@@ -82,13 +82,13 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
         onClick={(event) => event.stopPropagation()}
       />
       <div className="absolute bottom-6 flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
-        <button type="button" onClick={() => setZoom((value) => Math.min(3, value + 0.25))} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-white" aria-label="Aumentar zoom">
+        <button type="button" onClick={() => setZoom((value) => Math.min(3, value + 0.25))} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-surface text-white" aria-label="Aumentar zoom">
           <ZoomIn className="h-4 w-4" />
         </button>
-        <button type="button" onClick={() => setZoom((value) => Math.max(1, value - 0.25))} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 text-white" aria-label="Diminuir zoom">
+        <button type="button" onClick={() => setZoom((value) => Math.max(1, value - 0.25))} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-surface text-white" aria-label="Diminuir zoom">
           <ZoomOut className="h-4 w-4" />
         </button>
-        <button type="button" onClick={() => openOriginal(src)} className="h-9 rounded-full bg-zinc-800 px-3 text-sm text-white">
+        <button type="button" onClick={() => openOriginal(src)} className="h-9 rounded-full bg-surface px-3 text-sm text-white">
           Abrir original
         </button>
       </div>
@@ -138,7 +138,7 @@ function LinkCard({ url, signalingUrl, onZoom }: { url: string; signalingUrl: st
       <span className="w-1 shrink-0" style={{ backgroundColor: accentBar(embed) }} />
       <div className="min-w-0 flex-1 p-2.5">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{site}</p>
-        <button type="button" onClick={() => openLink(url)} className="mt-0.5 block max-w-full truncate text-left text-sm font-semibold text-[#00a8fc] hover:underline">
+        <button type="button" onClick={() => openLink(url)} className="mt-0.5 block max-w-full truncate text-left text-sm font-semibold text-[#22d3ee] hover:underline">
           {title}
         </button>
         {card?.description ? <p className="mt-1 line-clamp-3 text-xs text-muted">{card.description}</p> : null}
@@ -177,7 +177,7 @@ function MessageBody({ text, signalingUrl, onZoom }: { text: string; signalingUr
                 event.preventDefault()
                 openLink(part.value)
               }}
-              className="text-[#00a8fc] hover:underline"
+              className="text-[#22d3ee] hover:underline"
             >
               {part.value}
             </a>
@@ -295,7 +295,7 @@ export function ChatPanel({ messages, selfId, selfName, selfProfile, peers, sign
         )}
       </div>
       {problem ? <p className="px-3 pb-1 text-xs text-danger">{problem}</p> : null}
-      <form onSubmit={submit} className="mx-2 mb-2 rounded-xl bg-zinc-800/90 p-2 ring-1 ring-white/10">
+      <form onSubmit={submit} className="mx-2 mb-2 rounded-xl bg-surface/90 p-2 ring-1 ring-white/10">
         {pending ? (
           <div className="relative mb-2 inline-block">
             <img src={pending} alt="Prévia da imagem" className="h-16 rounded-lg" />
@@ -303,7 +303,7 @@ export function ChatPanel({ messages, selfId, selfName, selfProfile, peers, sign
               type="button"
               onClick={() => setPending(null)}
               aria-label="Remover imagem"
-              className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-white ring-1 ring-white/20"
+              className="absolute -right-1.5 -top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-elevated text-white ring-1 ring-white/20"
             >
               <X className="h-3 w-3" />
             </button>
@@ -316,7 +316,7 @@ export function ChatPanel({ messages, selfId, selfName, selfProfile, peers, sign
             onClick={() => fileRef.current?.click()}
             title="Anexar imagem"
             aria-label="Anexar imagem"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-700 text-zinc-100 transition-all hover:bg-zinc-600 disabled:opacity-40"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-ink transition-all hover:bg-white/15 disabled:opacity-40"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
           </button>

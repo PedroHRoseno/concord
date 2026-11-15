@@ -84,7 +84,7 @@ export function WebcamSheet({ onClose, onConfirm }: WebcamSheetProps) {
                 type="button"
                 aria-pressed={facingMode === mode}
                 onClick={() => setFacingMode(mode)}
-                className={`h-12 rounded-lg text-sm font-semibold ${facingMode === mode ? 'bg-blurple text-white' : 'bg-app text-ink ring-1 ring-line'}`}
+                className={`h-12 rounded-lg text-sm font-semibold ${facingMode === mode ? 'bg-accent text-on-accent' : 'bg-app text-ink ring-1 ring-line'}`}
               >
                 {label}
               </button>
@@ -126,7 +126,7 @@ export function WebcamSheet({ onClose, onConfirm }: WebcamSheetProps) {
         <button
           type="submit"
           disabled={!mobile && devices.length === 0}
-          className="mt-4 h-12 w-full rounded-lg bg-blurple text-sm font-semibold text-white transition-all duration-200 ease-out active:scale-95 disabled:opacity-40"
+          className="mt-4 h-12 w-full rounded-lg bg-accent text-sm font-semibold text-on-accent transition-all duration-200 ease-out active:scale-95 disabled:opacity-40"
         >
           Transmitir webcam
         </button>
