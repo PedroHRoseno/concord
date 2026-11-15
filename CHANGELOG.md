@@ -2,6 +2,19 @@
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões seguem [semver](https://semver.org/lang/pt-BR/). A `1.0.0` saiu no `package.json` sem tag git. As tags públicas começam em `v1.1.0`.
 
+## [1.11.0] - 2026-11-15
+
+### Alterado
+
+- Nova identidade visual: fundo azul-noturno, superfícies elevadas com bordas sutis e destaque ciano com texto escuro nos botões principais, no desktop e no celular.
+- O lobby ganhou barra lateral recolhível (Início, Criar / Entrar por código, Ajustes) com o seu perfil no rodapé, um card em destaque para a sala mais ativa com o botão "Entrar Agora" e uma grade com as outras salas. No celular, a navegação fica numa barra inferior.
+- Nova logo do Concord no app, no ícone do Windows, na bandeja do sistema e no ícone do Android.
+- Seletor Grade/Foco, barra de controles, lista da sala, chat e Jukebox seguem a nova paleta.
+
+### Corrigido
+
+- O palco vazio mostra só o nome da sala, sem o "Sala Sala geral" repetido.
+
 ## [1.10.1] - 2026-11-13
 
 ### Corrigido
